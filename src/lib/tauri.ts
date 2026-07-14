@@ -82,6 +82,10 @@ export async function deleteNote(path: string): Promise<void> {
   return invoke('delete_note', { path })
 }
 
+export async function deleteFolder(path: string): Promise<void> {
+  return invoke('delete_folder', { path })
+}
+
 export async function search(
   query: string,
   mode: SearchMode = 'fulltext',
@@ -135,4 +139,12 @@ export async function onVaultClosed(callback: () => void): Promise<() => void> {
 
 export async function createNote(): Promise<CreateNoteResult> {
   return invoke('create_note')
+}
+
+export async function createFolder(): Promise<{ path: string; name: string }> {
+  return invoke('create_folder')
+}
+
+export async function deleteFolder(path: string): Promise<void> {
+  return invoke('delete_folder', { path })
 }

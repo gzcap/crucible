@@ -18,6 +18,12 @@ pub struct CreateNoteResult {
     pub title: String,
 }
 
+#[derive(serde::Serialize)]
+pub struct CreateFolderResult {
+    pub path: String,
+    pub name: String,
+}
+
 #[tauri::command]
 pub fn open_vault(state: State<'_, AppState>, path: String) -> Result<VaultInfo> {
     let vault_path = PathBuf::from(&path);
@@ -30,8 +36,9 @@ pub fn open_vault(state: State<'_, AppState>, path: String) -> Result<VaultInfo>
     let mut registry = state.vault_registry.write();
     let existing_id = registry.find_id_by_path(&vault_path);
 
-    let (vault_id, vault_info) = if let Some(id) = existing_id {
-            let info = registry.get(&id).cloned().ok_or(AppError::VaultNotFound(id.clone()))?;
+    let (vault_id, mut vault_info) = if let Some(id) = existing_id {
+            let mut info = registry.get(&id).cloned().ok_or(AppError::VaultNotFound(id.clone()))?;
+            info.last_opened = Some(time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).unwrap());
             (id, info)
         } else {
         let id = generate_vault_id(&vault_path);
@@ -192,7 +199,37 @@ pub fn get_note_meta(state: State<'_, AppState>, path: String) -> Result<Option<
 
 #[tauri::command]
 pub fn get_backlinks(state: State<'_, AppState>, path: String) -> Result<Vec<Backlink>> {
-    Ok(state.link_index.get_backlinks(&path))
+    let mut backlinks = state.link_index.get_backlinks(&path);
+
+    // 增强 snippet：从源文件中提取包含 wikilink 的上下文行，
+    // 替代 LinkIndex 中仅返回 wikilink 文本的默认实现
+    if let Some(vault) = state.current_vault.read().as_ref() {
+        let target_pathbuf = PathBuf::from(&path);
+        let target_stem = target_pathbuf
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        for backlink in backlinks.iter_mut() {
+            let abs_path = vault.path.join(&backlink.source);
+            if let Ok(content) = fs::read_to_string(&abs_path) {
+                for line in content.lines() {
+                    if line.contains(&format!("[[{}", target_stem)) {
+                        let snippet = line.trim();
+                        backlink.snippet = if snippet.chars().count() > 200 {
+                            let truncated: String = snippet.chars().take(200).collect();
+                            format!("{}…", truncated)
+                        } else {
+                            snippet.to_string()
+                        };
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(backlinks)
 }
 
 #[tauri::command]
@@ -262,10 +299,35 @@ pub fn delete_note(state: State<'_, AppState>, path: String) -> Result<()> {
         .ok_or(AppError::NoVaultOpen)?;
 
     let abs_path = vault_path.join(&path);
-    fs::remove_file(&abs_path)?;
+    if abs_path.exists() {
+        fs::remove_file(&abs_path)?;
+    }
 
-    state.link_index.remove_note(&path)?;
-    state.search_index.remove_note(&path)?;
+    let _ = state.link_index.remove_note(&path);
+    let _ = state.search_index.remove_note(&path);
+
+    let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
+        kind: "delete".to_string(),
+        path,
+        new_path: None,
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_folder(state: State<'_, AppState>, path: String) -> Result<()> {
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+
+    let abs_path = vault_path.join(&path);
+    if abs_path.exists() {
+        fs::remove_dir_all(&abs_path)?;
+    }
 
     let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
         kind: "delete".to_string(),
@@ -321,8 +383,15 @@ pub fn create_note(state: State<'_, AppState>) -> Result<CreateNoteResult> {
         .map(|v| v.path.clone())
         .ok_or(AppError::NoVaultOpen)?;
 
-    let timestamp = time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).unwrap();
-    let title = format!("{}.md", timestamp.replace(':', "-"));
+    let mut name = "未命名文件".to_string();
+    let mut counter = 2;
+
+    while vault_path.join(format!("{}.md", name)).exists() {
+        name = format!("未命名文件{}", counter);
+        counter += 1;
+    }
+
+    let title = format!("{}.md", name);
     let path = title.clone();
     let abs_path = vault_path.join(&path);
 
@@ -343,4 +412,34 @@ pub fn create_note(state: State<'_, AppState>) -> Result<CreateNoteResult> {
     });
 
     Ok(CreateNoteResult { path, title })
+}
+
+#[tauri::command]
+pub fn create_folder(state: State<'_, AppState>) -> Result<CreateFolderResult> {
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+
+    let mut name = "未命名文件夹".to_string();
+    let mut counter = 2;
+
+    while vault_path.join(&name).exists() {
+        name = format!("未命名文件夹{}", counter);
+        counter += 1;
+    }
+
+    let path = name.clone();
+    let abs_path = vault_path.join(&path);
+    fs::create_dir_all(&abs_path)?;
+
+    let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
+        kind: "create".to_string(),
+        path: path.clone(),
+        new_path: None,
+    });
+
+    Ok(CreateFolderResult { path, name })
 }

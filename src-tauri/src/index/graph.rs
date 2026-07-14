@@ -3,7 +3,7 @@ use std::path::Path;
 
 use dashmap::DashMap;
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::parser::{extract_links, extract_stem, extract_tags, extract_title, replace_wikilink, LinkRef, NoteMeta};
 
 pub struct LinkIndex {

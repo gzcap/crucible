@@ -59,7 +59,16 @@ impl VaultRegistry {
     }
 
     pub fn list(&self) -> Vec<VaultInfo> {
-        self.vaults.values().cloned().collect()
+        let mut vaults: Vec<VaultInfo> = self.vaults.values().cloned().collect();
+        vaults.sort_by(|a, b| {
+            match (a.last_opened.as_ref(), b.last_opened.as_ref()) {
+                (Some(a), Some(b)) => b.cmp(a),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        });
+        vaults
     }
 
     pub fn set_last_used(&mut self, id: &str) {

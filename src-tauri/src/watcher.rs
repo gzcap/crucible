@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, FileIdMap};
-use notify::{EventKind, RecommendedWatcher, RecursiveMode};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -51,6 +51,7 @@ impl FileWatcher {
 
     pub fn start(&mut self) -> Result<()> {
         self.debouncer
+            .watcher()
             .watch(&self.vault_path, RecursiveMode::Recursive)?;
         Ok(())
     }

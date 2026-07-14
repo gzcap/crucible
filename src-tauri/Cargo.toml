@@ -20,6 +20,39 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-os = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# 文件监听
+notify = "6"
+notify-debouncer-full = "0.3"
+
+# 全文搜索
+tantivy = "0.22"
+
+# 并发原语
+parking_lot = "0.12"
+dashmap = "6"
+
+# 时间处理（formatting feature 用于 RFC3339 格式化）
+time = { version = "0.3", features = ["formatting"] }
+
+# 错误处理
+thiserror = "1"
+anyhow = "1"
+
+# 正则表达式（wikilink/tag 解析）
+regex = "1"
+
+# 目录遍历
+walkdir = "2"
+
+# 延迟初始化（正则编译缓存）
+lazy_static = "1.5"
+
+# 哈希（vault ID 生成）
+sha2 = "0.10"
+hex = "0.4"

@@ -137,15 +137,16 @@ impl SearchIndex {
     }
 
     pub fn remove_note(&self, rel_path: &str) -> Result<()> {
-        let mut writer_guard = self.writer.lock().map_err(|e| AppError::SearchError(e.to_string()))?;
-        if let Some(ref mut w) = *writer_guard {
+        let mut writer = self.writer.lock().map_err(|e| AppError::SearchError(e.to_string()))?;
+        if let Some(ref mut w) = *writer {
             let term = Term::from_field_text(self.path_field, rel_path);
             w.delete_term(term);
-            w.commit()?;
+            let _ = w.commit();
         }
 
-        if let Some(ref mut reader) = *self.reader.write().map_err(|e| AppError::SearchError(e.to_string()))? {
-            reader.reload()?;
+        let mut reader = self.reader.write().map_err(|e| AppError::SearchError(e.to_string()))?;
+        if let Some(ref mut r) = *reader {
+            let _ = r.reload();
         }
 
         Ok(())
@@ -173,7 +174,7 @@ impl SearchIndex {
             }
         };
 
-        let hits = searcher.search(&query, &TopDocs::with_limit(limit).order_by_score())?;
+        let hits = searcher.search(&query, &TopDocs::with_limit(limit))?;
 
         for (score, doc_addr) in hits {
             let doc = searcher.doc::<TantivyDocument>(doc_addr)?;

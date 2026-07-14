@@ -7,20 +7,28 @@ import {
   onFileChanged,
   onVaultOpened,
   onVaultClosed,
-  createNote
+  createNote,
+  createFolder,
+  deleteNote,
+  deleteFolder
 } from '../lib/tauri'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { useVaultStore } from './vault'
+import { useGraphStore } from './graph'
 
 export const useNotesStore = defineStore('notes', () => {
   const vaultStore = useVaultStore()
+  const graphStore = useGraphStore()
   const notes = ref<NoteMeta[]>([])
   const currentPath = ref<string | null>(null)
   const currentContent = ref('')
   const backlinks = ref<Backlink[]>([])
+  const isLoadingBacklinks = ref(false)
   const tabs = ref<EditorTab[]>([])
   const dirtyPaths = ref<Set<string>>(new Set())
   const fileTree = ref<FileTreeNode | null>(null)
+  const filteredTree = ref<FileTreeNode | null>(null)
+  const searchQuery = ref('')
   const savingPaths = new Set<string>()
   let openNoteRequestId = 0
 
@@ -60,6 +68,26 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
+  async function createNewFolder() {
+    await createFolder()
+    await loadNotes()
+  }
+
+  async function removeNote(path: string) {
+    await deleteNote(path)
+    notes.value = notes.value.filter(n => n.path !== path)
+    tabs.value = tabs.value.filter(t => t.path !== path)
+    if (currentPath.value === path) {
+      currentPath.value = tabs.value[0]?.path || null
+    }
+    buildFileTree()
+  }
+
+  async function removeFolder(path: string) {
+    await deleteFolder(path)
+    await loadNotes()
+  }
+
   async function loadNotes() {
     try {
       const result = await listAllNotes()
@@ -97,6 +125,48 @@ export const useNotesStore = defineStore('notes', () => {
     }
 
     fileTree.value = root
+    applySearchFilter()
+  }
+
+  function applySearchFilter() {
+    if (!searchQuery.value) {
+      filteredTree.value = fileTree.value
+      return
+    }
+
+    const query = searchQuery.value.toLowerCase()
+    const filtered = filterTree(fileTree.value, query)
+    filteredTree.value = filtered
+  }
+
+  function filterTree(node: FileTreeNode | null, query: string): FileTreeNode | null {
+    if (!node) return null
+
+    const matches = node.name.toLowerCase().includes(query)
+
+    let filteredChildren: FileTreeNode[] = []
+    if (node.children) {
+      for (const child of node.children) {
+        const filteredChild = filterTree(child, query)
+        if (filteredChild) {
+          filteredChildren.push(filteredChild)
+        }
+      }
+    }
+
+    if (matches || filteredChildren.length > 0) {
+      return {
+        ...node,
+        children: filteredChildren.length > 0 ? filteredChildren : undefined
+      }
+    }
+
+    return null
+  }
+
+  function setSearchQuery(query: string) {
+    searchQuery.value = query
+    applySearchFilter()
   }
 
   async function openNote(path: string) {
@@ -127,6 +197,7 @@ export const useNotesStore = defineStore('notes', () => {
     }
 
     // 加载反向链接（同样检查请求 ID，防止竞态覆盖）
+    isLoadingBacklinks.value = true
     getBacklinks(path).then((result) => {
       if (requestId === openNoteRequestId) {
         backlinks.value = result
@@ -134,6 +205,10 @@ export const useNotesStore = defineStore('notes', () => {
     }).catch(() => {
       if (requestId === openNoteRequestId) {
         backlinks.value = []
+      }
+    }).finally(() => {
+      if (requestId === openNoteRequestId) {
+        isLoadingBacklinks.value = false
       }
     })
   }
@@ -178,7 +253,12 @@ export const useNotesStore = defineStore('notes', () => {
   }
 
   async function loadBacklinks(path: string) {
-    backlinks.value = await getBacklinks(path)
+    isLoadingBacklinks.value = true
+    try {
+      backlinks.value = await getBacklinks(path)
+    } finally {
+      isLoadingBacklinks.value = false
+    }
   }
 
   function closeTab(path: string) {
@@ -232,7 +312,11 @@ export const useNotesStore = defineStore('notes', () => {
 
   async function setupEventListeners() {
     await onFileChanged(handleFileChange)
-    await onVaultOpened(() => loadNotes())
+    await onVaultOpened(() => {
+      loadNotes()
+      // vault 打开后刷新图谱数据，GraphView 的 watch 会自动重新渲染
+      graphStore.loadGraph()
+    })
     await onVaultClosed(() => {
       notes.value = []
       currentPath.value = null
@@ -248,9 +332,11 @@ export const useNotesStore = defineStore('notes', () => {
     currentPath,
     currentContent,
     backlinks,
+    isLoadingBacklinks,
     tabs,
     currentTab,
     fileTree,
+    filteredTree,
     allTags,
     loadNotes,
     openNote,
@@ -259,7 +345,11 @@ export const useNotesStore = defineStore('notes', () => {
     loadBacklinks,
     closeTab,
     createNewNote,
+    createNewFolder,
+    removeNote,
+    removeFolder,
     setDirty,
+    setSearchQuery,
     setupEventListeners
   }
 })

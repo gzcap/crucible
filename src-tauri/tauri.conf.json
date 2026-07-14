@@ -4,15 +4,25 @@
   "version": "0.1.0",
   "identifier": "com.gzc.roc",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "roc",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "resizable": true,
+        "transparent": false,
+        "trafficLightPosition": { "x": 10, "y": 19 } 
       }
     ],
     "security": {

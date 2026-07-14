@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Link, Document } from "@element-plus/icons-vue";
+import { Link, Document, Loading } from "@element-plus/icons-vue";
 import PanelHeader from "./PanelHeader.vue";
 import { useNotesStore } from "../../stores/notes";
 
@@ -18,6 +18,41 @@ function sourceFolder(source: string): string {
   const idx = source.lastIndexOf("/");
   return idx > -1 ? source.slice(0, idx) : "";
 }
+
+/** 来源文件名（不含目录） */
+function sourceFileName(source: string): string {
+  const idx = source.lastIndexOf("/");
+  return idx > -1 ? source.slice(idx + 1) : source;
+}
+
+interface SnippetSegment {
+  text: string;
+  isLink: boolean;
+}
+
+/**
+ * 将 snippet 按 wikilink `[[...]]` 拆分为片段，用于高亮渲染。
+ * 匹配 `[[target]]`、`[[target|alias]]`、`[[target#heading]]` 形式。
+ */
+function splitSnippet(snippet: string): SnippetSegment[] {
+  if (!snippet) return [];
+  const segments: SnippetSegment[] = [];
+  // 兼容 Milkdown 序列化器可能残留的转义反斜杠
+  const regex = /\\?\[\\?\[([^\]|#]+)(?:\|[^\]]*)?(?:#[^\]]*)?\\?\]\\?\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(snippet)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ text: snippet.slice(lastIndex, match.index), isLink: false });
+    }
+    segments.push({ text: match[0].replace(/\\(?=[\[\]])/g, ""), isLink: true });
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < snippet.length) {
+    segments.push({ text: snippet.slice(lastIndex), isLink: false });
+  }
+  return segments;
+}
 </script>
 
 <template>
@@ -31,8 +66,14 @@ function sourceFolder(source: string): string {
         <span class="current-note-name">{{ currentNoteName }}</span>
       </div>
 
+      <!-- 加载中骨架 -->
+      <div v-if="notesStore.isLoadingBacklinks && notesStore.backlinks.length === 0" class="loading-state">
+        <Loading :size="14" class="loading-spin" />
+        <span class="loading-text">加载反向链接…</span>
+      </div>
+
       <!-- 反向链接列表 -->
-      <div v-if="notesStore.backlinks.length > 0" class="backlinks-list">
+      <div v-else-if="notesStore.backlinks.length > 0" class="backlinks-list">
         <div
           v-for="backlink in notesStore.backlinks"
           :key="backlink.source"
@@ -41,13 +82,16 @@ function sourceFolder(source: string): string {
         >
           <div class="backlink-header">
             <Link :size="12" class="backlink-icon" />
-            <span class="backlink-title">{{ backlink.source_title }}</span>
+            <span class="backlink-title">{{ backlink.source_title || sourceFileName(backlink.source) }}</span>
           </div>
           <div v-if="sourceFolder(backlink.source)" class="backlink-path">
             {{ sourceFolder(backlink.source) }}
           </div>
           <div v-if="backlink.snippet" class="backlink-snippet">
-            {{ backlink.snippet }}
+            <template v-for="(seg, i) in splitSnippet(backlink.snippet)" :key="i">
+              <span v-if="seg.isLink" class="snippet-wikilink">{{ seg.text }}</span>
+              <span v-else>{{ seg.text }}</span>
+            </template>
           </div>
         </div>
       </div>
@@ -83,7 +127,7 @@ function sourceFolder(source: string): string {
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   font-size: 12px;
   color: var(--roc-accent);
   background: rgba(0, 122, 204, 0.06);
@@ -95,6 +139,25 @@ function sourceFolder(source: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 加载状态 */
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--roc-text-muted);
+}
+
+.loading-spin {
+  animation: roc-spin 1s linear infinite;
+}
+
+@keyframes roc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* 反向链接列表 */
@@ -150,10 +213,22 @@ function sourceFolder(source: string): string {
   line-height: 1.5;
   color: var(--roc-text-secondary);
   margin-left: 17px;
+  padding: 4px 6px;
+  background: var(--roc-bg-tertiary);
+  border-radius: 3px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* snippet 中的 wikilink 高亮 */
+.snippet-wikilink {
+  color: var(--roc-accent);
+  font-weight: 500;
+  background: rgba(0, 122, 204, 0.1);
+  padding: 0 2px;
+  border-radius: 2px;
 }
 
 /* 空状态 */

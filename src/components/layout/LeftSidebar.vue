@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 import { useNotesStore } from "../../stores/notes";
 import {
   FolderOpened,
@@ -18,6 +19,7 @@ import BacklinksPanel from "../panels/BacklinksPanel.vue";
 import OutlinePanel from "../panels/OutlinePanel.vue";
 import SettingsPanel from "../panels/SettingsPanel.vue";
 
+const router = useRouter();
 const notesStore = useNotesStore();
 const layoutStore = useLayoutStore();
 
@@ -40,8 +42,13 @@ function handleNavClick(id: string) {
     activeTab.value = id;
     layoutStore.leftSidebarVisible = true;
   }
+  // 与 RightSidebar 保持一致：图谱视图通过路由切换，
+  // MainContent 依据 route.name === 'Graph' 决定渲染 GraphView
   if (id === "graph") {
     notesStore.openGraph();
+    router.push("/graph");
+  } else {
+    router.push("/");
   }
 }
 </script>
