@@ -41,7 +41,7 @@ export const useLayoutStore = defineStore('layout', () => {
 
   /** 侧边栏内容面板可见性（点击活动栏当前项切换） */
   const leftSidebarVisible = ref(true)
-  const rightSidebarVisible = ref(true)
+  const rightSidebarVisible = ref(false)
 
   function persist() {
     localStorage.setItem(

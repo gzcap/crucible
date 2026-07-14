@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ElIcon } from 'element-plus'
 import { Refresh, MoreFilled, Document, FolderAdd, Search } from "@element-plus/icons-vue";
 import PanelHeader from "./PanelHeader.vue";
 import FileTree from "../explorer/FileTree.vue";
@@ -32,22 +33,30 @@ function clearSearch() {
       <template #actions>
         <el-tooltip content="新建笔记" placement="bottom">
           <button class="panel-btn" @click="handleNewNote">
-            <Document :size="14" />
+            <ElIcon :size="14">
+              <Document />
+            </ElIcon>
           </button>
         </el-tooltip>
         <el-tooltip content="新建文件夹" placement="bottom">
           <button class="panel-btn" @click="handleNewFolder">
-            <FolderAdd :size="14" />
+            <ElIcon :size="14">
+              <FolderAdd />
+            </ElIcon>
           </button>
         </el-tooltip>
         <el-tooltip content="刷新" placement="bottom">
           <button class="panel-btn" @click="notesStore.loadNotes()">
-            <Refresh :size="14" />
+            <ElIcon :size="14">
+              <Refresh />
+            </ElIcon>
           </button>
         </el-tooltip>
         <el-tooltip content="更多" placement="bottom">
           <button class="panel-btn">
-            <MoreFilled :size="14" />
+            <ElIcon :size="14">
+              <MoreFilled />
+            </ElIcon>
           </button>
         </el-tooltip>
       </template>
@@ -55,7 +64,9 @@ function clearSearch() {
     
     <div class="search-bar">
       <div class="search-input-wrapper">
-        <Search :size="13" class="search-icon" />
+        <ElIcon :size="13" class="search-icon">
+          <Search />
+        </ElIcon>
         <input
           type="text"
           v-model="searchQuery"

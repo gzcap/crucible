@@ -247,6 +247,58 @@ pub fn get_all_tags(state: State<'_, AppState>) -> Result<Vec<String>> {
     Ok(state.link_index.get_all_tags())
 }
 
+#[derive(serde::Serialize)]
+pub struct TagOccurrence {
+    pub path: String,
+    pub title: String,
+    pub line: usize,
+    pub snippet: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct TagDetail {
+    pub name: String,
+    pub count: usize,
+    pub occurrences: Vec<TagOccurrence>,
+}
+
+#[tauri::command]
+pub fn get_tag_details(state: State<'_, AppState>, tag: String) -> Result<TagDetail> {
+    let mut occurrences = Vec::new();
+    
+    if let Some(vault) = state.current_vault.read().as_ref() {
+        for note in state.link_index.notes.iter() {
+            if note.tags.contains(&tag) {
+                let abs_path = vault.path.join(&note.path);
+                if let Ok(content) = fs::read_to_string(&abs_path) {
+                    for (line_num, line) in content.lines().enumerate() {
+                        if line.contains(&format!("#{}", tag)) {
+                            let snippet = if line.chars().count() > 100 {
+                                let truncated: String = line.chars().take(100).collect();
+                                format!("{}…", truncated)
+                            } else {
+                                line.to_string()
+                            };
+                            occurrences.push(TagOccurrence {
+                                path: note.path.clone(),
+                                title: note.title.clone(),
+                                line: line_num + 1,
+                                snippet,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(TagDetail {
+        name: tag,
+        count: occurrences.len(),
+        occurrences,
+    })
+}
+
 #[tauri::command]
 pub fn resolve_wikilink(state: State<'_, AppState>, target: String) -> Result<Option<String>> {
     Ok(state.link_index.resolve_wikilink(&target))
@@ -308,7 +360,7 @@ pub fn delete_note(state: State<'_, AppState>, path: String) -> Result<()> {
 
     let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
         kind: "delete".to_string(),
-        path,
+        path: path.clone(),
         new_path: None,
     });
 
@@ -329,9 +381,16 @@ pub fn delete_folder(state: State<'_, AppState>, path: String) -> Result<()> {
         fs::remove_dir_all(&abs_path)?;
     }
 
+    let index_dir = state.get_index_dir();
+    if let Some(vault_id) = state.current_vault.read().as_ref().map(|v| v.id.clone()) {
+        let _ = state.link_index.rebuild_from_vault(&vault_path);
+        let _ = state.search_index.open_or_create(&index_dir, &vault_id);
+        let _ = state.search_index.build_from_vault(&vault_path);
+    }
+
     let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
         kind: "delete".to_string(),
-        path,
+        path: path.clone(),
         new_path: None,
     });
 

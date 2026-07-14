@@ -30,6 +30,7 @@ const showCompletion = ref(false)
 const completionItems = ref<NoteMeta[]>([])
 const completionIndex = ref(0)
 const completionQuery = ref('')
+const completionPosition = ref({ x: 0, y: 0 })
 let completionAnchor: { from: number; to: number } | null = null
 let allNotesCache: NoteMeta[] = []
 
@@ -131,6 +132,17 @@ function checkCompletion() {
     if (completionItems.value.length > 0) {
       showCompletion.value = true
       completionIndex.value = 0
+
+      // 计算补全框位置：基于光标位置
+      const coords = editorView.coordsAtPos(pos)
+      const container = containerRef.value
+      if (container) {
+        const containerRect = container.getBoundingClientRect()
+        completionPosition.value = {
+          x: coords.left - containerRect.left + 4,
+          y: coords.bottom - containerRect.top + 4,
+        }
+      }
       return
     }
   }
@@ -289,7 +301,11 @@ watch(() => notesStore.currentPath, () => {
     <Milkdown class="milkdown-pane" />
 
     <!-- wikilink 自动补全下拉框 -->
-    <div v-if="showCompletion" class="wikilink-completion">
+    <div
+      v-if="showCompletion"
+      class="wikilink-completion"
+      :style="{ left: completionPosition.x + 'px', top: completionPosition.y + 'px' }"
+    >
       <div
         v-for="(note, idx) in completionItems"
         :key="note.path"
@@ -339,8 +355,7 @@ watch(() => notesStore.currentPath, () => {
   max-height: 280px;
   overflow-y: auto;
   min-width: 240px;
-  bottom: 20px;
-  left: 40px;
+  transform: translateY(0);
 }
 
 .completion-item {

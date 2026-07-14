@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { inject, type Ref, ref, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElIcon } from 'element-plus'
 import { ArrowDown, ArrowRight, Folder, FolderOpened, Document, FolderAdd } from '@element-plus/icons-vue'
 import { useNotesStore } from '../../stores/notes'
 import ContextMenu from './ContextMenu.vue'
@@ -90,6 +90,8 @@ async function deleteNode(node: FileTreeNode) {
       confirmButtonClass: 'el-button--danger'
     })
 
+    closeContextMenu()
+
     if (node.isDir) {
       await notesStore.removeFolder(node.path)
     } else {
@@ -118,15 +120,19 @@ async function createFolderInFolder(path: string) {
         @contextmenu="(e) => handleContextMenu(e, node)"
       >
         <span v-if="node.isDir" class="dir-toggle" @click.stop="emit('toggle', node.path)">
-          <ArrowDown v-if="isExpanded(node.path)" :size="12" />
-          <ArrowRight v-else :size="12" />
+          <ElIcon :size="12">
+            <ArrowDown v-if="isExpanded(node.path)" />
+            <ArrowRight v-else />
+          </ElIcon>
         </span>
         <span v-else class="dir-spacer" />
         
         <span class="node-icon">
-          <FolderOpened v-if="node.isDir && isExpanded(node.path)" :size="14" class="icon-dir-open" />
-          <Folder v-else-if="node.isDir" :size="14" class="icon-dir" />
-          <Document v-else :size="13" class="icon-file" />
+          <ElIcon :size="14">
+            <FolderOpened v-if="node.isDir && isExpanded(node.path)" class="icon-dir-open" />
+            <Folder v-else-if="node.isDir" class="icon-dir" />
+            <Document v-else class="icon-file" />
+          </ElIcon>
         </span>
         
         <span class="node-name">
@@ -143,7 +149,9 @@ async function createFolderInFolder(path: string) {
             title="新建文件"
             @click.stop="createNoteInFolder(node.path)"
           >
-            <Document :size="12" />
+            <ElIcon :size="12">
+              <Document />
+            </ElIcon>
           </button>
           <button 
             v-if="node.isDir" 
@@ -151,7 +159,9 @@ async function createFolderInFolder(path: string) {
             title="新建文件夹"
             @click.stop="createFolderInFolder(node.path)"
           >
-            <FolderAdd :size="12" />
+            <ElIcon :size="12">
+              <FolderAdd />
+            </ElIcon>
           </button>
         </span>
       </div>
