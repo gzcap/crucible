@@ -5,30 +5,30 @@
   --roc-bg-hover: var(--el-fill-color-light);
   /*  */
   --roc-bg-active: ;
-  
+
   --roc-text-primary: var(--el-text-color-primary);
   --roc-text-secondary: var(--el-text-color-regular);
   --roc-text-muted: var(--el-text-color-secondary);
   --roc-text-white: #ffffff;
-  
+
   --roc-accent: var(--el-color-primary);
   --roc-accent-hover: var(--el-color-primary-light-3);
   --roc-accent-active: var(--el-color-primary-dark-2);
-  
+
   --roc-border: var(--el-border-color);
   --roc-border-light: var(--el-border-color-light);
-  
+
   --roc-tag-color: var(--el-color-purple);
   --roc-link-color: var(--el-color-primary);
   --roc-wikilink-color: var(--el-color-purple);
-  
+
   --roc-success: var(--el-color-success);
   --roc-warning: var(--el-color-warning);
   --roc-danger: var(--el-color-danger);
-  
+
   /* 顶部栏的高度 */
   --roc-titlebar-height: 40px;
-  
+
   /* 侧边栏的宽高 */
   --roc-sidebar-width: auto;
   --roc-sidebar-height: 90%;
@@ -48,25 +48,25 @@
   --roc-toolbar-height: 32px;
   --roc-statusbar-height: 22px;
 
-  /* // 关闭默认的 CSS 动画并防止新旧视图状态以任何方式混合（新状态从旧状态上方“擦除”，而不是过渡）
-  &::view-transition-image-pair(root) {
-    isolation: auto;
-  }
-  &::view-transition-old(root),
-  &::view-transition-new(root) {
-    animation: none;
-    mix-blend-mode: normal;
-    display: block;
-  } */
-  
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.6;
   color: var(--roc-text-primary);
   background: var(--roc-bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+::view-transition-old(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 html.light {

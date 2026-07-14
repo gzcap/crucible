@@ -5,8 +5,6 @@ import { useThemeStore, type ThemeMode } from "../../stores/theme";
 
 const themeStore = useThemeStore();
 const showMenu = ref(false);
-const switchTheme = ref();
-const isDark = computed(() => themeStore.actualTheme === "dark");
 const currentIcon = computed(() => {
   switch (themeStore.mode) {
     case "dark":
@@ -26,38 +24,28 @@ const options: { value: ThemeMode; label: string; icon: any }[] = [
   { value: "system", label: "跟随系统", icon: Monitor },
 ];
 
-function selectTheme(option: any) {
-  // console.log("selectTheme", option);
+function selectTheme(option: any, e: MouseEvent) {
   const transition = document.startViewTransition(() => {
-    // console.log("startViewTransition", option);
     themeStore.setMode(option.value);
     showMenu.value = false;
   });
   transition.ready.then(() => {
-    const { clientX, clientY } = option;
-    // 计算半径，以鼠标点击的位置为圆心，到四个角的距离中最大的那个作为半径
+    const { clientX, clientY } = e;
     const radius = Math.hypot(
       Math.max(clientX, innerWidth - clientX),
       Math.max(clientY, innerHeight - clientY),
     );
-    const clipPath = [
-      `circle(0% at ${clientX}px ${clientY}px)`,
-      `circle(${radius}px at ${clientX}px ${clientY}px)`,
-    ];
-    const isDark = document.documentElement.classList.contains("dark");
-    console.log("isDark", isDark);
-    const clipPathList = isDark ? clipPath.reverse() : clipPath;
     document.documentElement.animate(
       {
-        // 切换方向相反
-        clipPath: clipPathList,
+        clipPath: [
+          `circle(0% at ${clientX}px ${clientY}px)`,
+          `circle(${radius}px at ${clientX}px ${clientY}px)`,
+        ],
       },
       {
-        duration: 300,
-        // 如果要切换到暗色主题
-        pseudoElement: isDark
-          ? "::view-transition-old(root)"
-          : "::view-transition-new(root)",
+        duration: 400,
+        easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+        pseudoElement: "::view-transition-new(root)",
       },
     );
   });
@@ -72,10 +60,6 @@ function handleClickOutside(e: MouseEvent) {
   if (!target.closest(".theme-toggle")) {
     showMenu.value = false;
   }
-}
-
-function operateFn(e: any) {
-  
 }
 
 if (typeof window !== "undefined") {
@@ -100,7 +84,7 @@ if (typeof window !== "undefined") {
           :key="option.value"
           class="menu-item"
           :class="{ active: themeStore.mode === option.value }"
-          @click="selectTheme(option)"
+          @click="selectTheme(option, $event)"
         >
           <component :is="option.icon" :size="14" class="item-icon" />
           <span class="item-label">{{ option.label }}</span>
@@ -195,12 +179,12 @@ if (typeof window !== "undefined") {
 
 .menu-enter-active,
 .menu-leave-active {
-  transition: all 0.15s ease;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .menu-enter-from,
 .menu-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-4px) scale(0.95);
 }
 </style>
