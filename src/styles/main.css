@@ -47,6 +47,17 @@
   --roc-tabs-height: 35px;
   --roc-toolbar-height: 32px;
   --roc-statusbar-height: 22px;
+
+  /* // 关闭默认的 CSS 动画并防止新旧视图状态以任何方式混合（新状态从旧状态上方“擦除”，而不是过渡）
+  &::view-transition-image-pair(root) {
+    isolation: auto;
+  }
+  &::view-transition-old(root),
+  &::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+    display: block;
+  } */
   
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Helvetica Neue', Arial, sans-serif;
