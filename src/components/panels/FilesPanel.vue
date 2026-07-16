@@ -61,23 +61,6 @@ function clearSearch() {
         </el-tooltip>
       </template>
     </PanelHeader>
-    
-    <div class="search-bar">
-      <div class="search-input-wrapper">
-        <ElIcon :size="13" class="search-icon">
-          <Search />
-        </ElIcon>
-        <input
-          type="text"
-          v-model="searchQuery"
-          placeholder="搜索文件..."
-          class="search-input"
-          @input="handleSearch"
-          @keyup.enter="handleSearch"
-        />
-        <button v-if="searchQuery" class="search-clear" @click="clearSearch">×</button>
-      </div>
-    </div>
 
     <FileTree :search-query="searchQuery" />
   </div>

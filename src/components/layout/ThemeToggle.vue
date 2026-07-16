@@ -75,7 +75,7 @@ if (typeof window !== "undefined") {
       @click="toggleMenu"
       title="切换主题"
     >
-      <component :is="currentIcon" :size="16" />
+      <component :is="currentIcon" :size="15" style="width: 16px; height: 16px;" />
     </button>
     <Transition name="menu">
       <div v-if="showMenu" class="theme-menu">

@@ -33,12 +33,7 @@ interface NavItem {
 
 const navItems = computed<NavItem[]>(() => {
   const items: NavItem[] = [
-    { id: "files", icon: FolderOpened, iconType: 'component', label: "资源管理器" },
-    { id: "search", icon: Search, iconType: 'component', label: "搜索" },
     { id: "backlinks", icon: Link, iconType: 'component', label: "反向链接" },
-    { id: "outline", icon: List, iconType: 'component', label: "大纲" },
-    { id: "graph", icon: Connection, iconType: 'component', label: "图谱" },
-    { id: "settings", icon: Setting, iconType: 'component', label: "设置" },
   ];
   
   pluginPanels.value.forEach(panel => {
@@ -96,11 +91,7 @@ onUnmounted(() => {
   <aside class="sidebar">
     <Transition name="slide-right">
       <div v-show="layoutStore.rightSidebarVisible" class="sidebar-content">
-        <FilesPanel v-if="activeTab === 'files'" />
-        <SearchPanel v-else-if="activeTab === 'search'" />
-        <BacklinksPanel v-else-if="activeTab === 'backlinks'" />
-        <OutlinePanel v-else-if="activeTab === 'outline'" />
-        <SettingsPanel v-else-if="activeTab === 'settings'" />
+        <BacklinksPanel v-if="activeTab === 'backlinks'" />
         <PluginPanel 
           v-else-if="getActivePluginPanel()" 
           :panel="getActivePluginPanel()!" 

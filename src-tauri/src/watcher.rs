@@ -1,3 +1,11 @@
+//! 文件系统监控模块
+//!
+//! 使用 `notify` 库监控 Vault 目录下的文件变化，支持：
+//! - 文件创建/修改/删除事件
+//! - 300ms 防抖（避免频繁事件）
+//! - 自动更新链接索引和搜索索引
+//! - 通过 Tauri 事件通知前端
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -11,14 +19,27 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::error::Result;
 use crate::state::AppState;
 
+/// 文件监控器
+///
+/// 使用 debouncer 机制避免频繁触发事件，仅处理 `.md` 文件的变化。
 pub struct FileWatcher {
+    /// Debouncer 实例，管理监控器和防抖逻辑
     pub debouncer: Debouncer<RecommendedWatcher, FileIdMap>,
+    /// Tauri 应用句柄，用于发送事件
     pub app_handle: Arc<AppHandle>,
+    /// 监控的 Vault 路径
     pub vault_path: PathBuf,
+    /// 待处理的重命名操作（暂未使用）
     pending_renames: Mutex<HashMap<u64, (PathBuf, Instant)>>,
 }
 
 impl FileWatcher {
+    /// 创建新的文件监控器
+    ///
+    /// # 参数
+    ///
+    /// - `app_handle`: Tauri 应用句柄
+    /// - `vault_path`: 需要监控的目录路径
     pub fn new(app_handle: Arc<AppHandle>, vault_path: &Path) -> Result<Self> {
         let vault_path_clone = vault_path.to_path_buf();
         let app_handle_clone = app_handle.clone();
@@ -49,6 +70,9 @@ impl FileWatcher {
         })
     }
 
+    /// 启动文件监控
+    ///
+    /// 开始递归监控指定目录下的所有文件变化。
     pub fn start(&mut self) -> Result<()> {
         self.debouncer
             .watcher()
@@ -56,9 +80,16 @@ impl FileWatcher {
         Ok(())
     }
 
+    /// 处理文件系统事件
+    ///
+    /// 根据事件类型执行相应操作：
+    /// - 创建/修改：更新索引并通知前端
+    /// - 删除：从索引中移除并通知前端
+    /// - 其他：忽略
     fn handle_event(app_handle: &AppHandle, vault_path: &Path, event: notify_debouncer_full::DebouncedEvent) {
         let event = event.event;
 
+        // 只处理 Markdown 文件
         if !event.paths.iter().any(|p| {
             p.extension()
                 .map_or(false, |ext| ext.eq_ignore_ascii_case("md"))
@@ -115,14 +146,24 @@ impl FileWatcher {
     }
 }
 
+/// 文件变化事件
+///
+/// 用于通过 Tauri 事件系统通知前端文件变化。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FileChangeEvent {
+    /// 事件类型：`create`、`modify`、`delete`、`rename`
     pub kind: String,
+    /// 变化文件的相对路径
     pub path: String,
+    /// 重命名时的新路径（可选）
     pub new_path: Option<String>,
 }
 
+/// 监控器错误事件
+///
+/// 用于通过 Tauri 事件系统通知前端监控器错误。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct WatcherErrorEvent {
+    /// 错误消息
     pub message: String,
 }
