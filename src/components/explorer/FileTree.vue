@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, provide } from 'vue'
+import { ElIcon } from 'element-plus'
 import FileTreeNode from './FileTreeNode.vue'
 import ContextMenu from './ContextMenu.vue'
 import { useNotesStore } from '../../stores/notes'
@@ -79,10 +80,14 @@ const rootNodes = computed(() => {
   <div class="file-tree" @contextmenu="handleContextMenu">
     <div class="tree-toolbar" v-if="rootNodes.length > 0">
       <button class="tree-tool-btn" @click="expandAll" title="展开所有">
-        <FolderOpened :size="12" />
+        <ElIcon :size="12">
+          <FolderOpened />
+        </ElIcon>
       </button>
       <button class="tree-tool-btn" @click="collapseAll" title="折叠所有">
-        <Folder :size="12" />
+        <ElIcon :size="12">
+          <Folder />
+        </ElIcon>
       </button>
     </div>
 

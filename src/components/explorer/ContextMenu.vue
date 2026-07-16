@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Document, FolderAdd, Trash, Refresh } from '@element-plus/icons-vue'
+import { ElIcon } from 'element-plus'
+import { Document, FolderAdd, Delete, Refresh } from '@element-plus/icons-vue'
 
 interface MenuItem {
   label: string
@@ -57,7 +58,9 @@ onUnmounted(() => {
           class="menu-item"
           @click="item.action(); handleClick()"
         >
-          <component v-if="item.icon" :is="item.icon" :size="14" class="menu-icon" />
+          <ElIcon v-if="item.icon" :size="14" class="menu-icon">
+            <component :is="item.icon" />
+          </ElIcon>
           <span class="menu-label">{{ item.label }}</span>
         </button>
       </div>

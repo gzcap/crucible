@@ -240,3 +240,127 @@ sub/C.md  : # C\n[[A]] 嵌入 ![[B]]
 - CSS 片段：`styles/` 下预留 `snippets/` 目录与设置项占位。
 - 模板：预留 `templates/` 目录与 `apply_template` 命令签名占位。
 - Dataview：预留查询语言类型，不实现解析器。
+
+
+## 插件系统架构
+
+### 核心文件
+
+| 文件 | 职责 |
+|------|------|
+| [types.ts](file:///Users/zmh/Documents/code/roc/roc/src/plugins/types.ts) | `Component`和`Plugin`基类定义 |
+| [manifest.ts](file:///Users/zmh/Documents/code/roc/roc/src/plugins/manifest.ts) | 插件清单接口和创建函数 |
+| [app.ts](file:///Users/zmh/Documents/code/roc/roc/src/plugins/app.ts) | `App`接口及子系统（Vault/Workspace/MetadataCache/Commands/Events） |
+| [registry.ts](file:///Users/zmh/Documents/code/roc/roc/src/plugins/registry.ts) | `App`实现和全局实例 |
+| [index.ts](file:///Users/zmh/Documents/code/roc/roc/src/plugins/index.ts) | 插件系统入口 |
+
+### 内置插件示例
+
+- [WikilinkPlugin](file:///Users/zmh/Documents/code/roc/roc/src/plugins/wikilink.ts) - wikilink语法支持
+- [GraphPlugin](file:///Users/zmh/Documents/code/roc/roc/src/plugins/graph.ts) - 关系图谱
+- [TagsPlugin](file:///Users/zmh/Documents/code/roc/roc/src/plugins/tags.ts) - 标签管理
+
+## 核心设计（1:1照搬Obsidian）
+
+### Component基类
+
+```typescript
+class Component {
+  onload()           // 组件加载
+  onunload()         // 组件卸载（自动清理所有注册资源）
+  register(cleanup)  // 注册清理回调
+  registerEvent(eventSource, name, callback)  // 注册事件监听
+  registerDomEvent(el, eventName, callback)   // 注册DOM事件
+  registerInterval(callback, delay)           // 注册定时器
+  addChild(child)    // 添加子组件
+}
+```
+
+### Plugin基类
+
+```typescript
+abstract class Plugin extends Component {
+  app: App           // 应用实例
+  manifest           // 插件清单
+  static manifest    // 静态清单属性
+  
+  constructor(app)   // 仅需传入app
+  loadData<T>()      // 加载插件配置
+  saveData(data)     // 保存插件配置
+}
+```
+
+### App子系统
+
+- **vault** - 文件系统操作
+- **workspace** - 界面布局管理
+- **metadataCache** - 链接解析和元数据
+- **commands** - 命令注册和执行
+- **events** - 事件订阅和触发
+
+## 使用方式
+
+```typescript
+// 创建插件
+class MyPlugin extends Plugin {
+  static manifest = createManifest('my-plugin', 'My Plugin', '1.0.0')
+  
+  onload() {
+    // 注册命令
+    this.app.commands.addCommand({
+      id: 'my-command',
+      name: 'My Command',
+      callback: () => {}
+    })
+    
+    // 注册事件
+    this.registerEvent(this.app.events, 'app:mounted', () => {})
+    
+    // 加载配置
+    const config = await this.loadData()
+  }
+  
+  onunload() {
+    // 手动清理（自动注册的资源会自动清理）
+  }
+}
+
+// 注册和启用
+rocApp.registerPlugin(MyPlugin)
+rocApp.enablePlugin('my-plugin')
+```
+
+
+
+### 使用方式
+将第三方插件 JS 文件放入仓库根目录的 .roc/plugins/ 文件夹中，然后：
+
+1. 打开设置面板（侧边栏齿轮图标）
+2. 点击「从仓库加载插件」按钮
+3. 在插件列表中启用需要的插件
+### 插件文件格式
+```
+// my-plugin.js
+class MyPlugin {
+  static manifest = {
+    id: 'my-plugin',
+    name: 'My Plugin',
+    version: '1.0.0',
+    description: '插件描述'
+  }
+  
+  constructor(app) {
+    this.app = app
+  }
+  
+  onload() {
+    // 插件初始化
+  }
+  
+  onunload() {
+    // 插件清理
+  }
+}
+
+export default MyPlugin
+```

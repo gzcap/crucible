@@ -11,7 +11,8 @@ import type {
   SearchMode,
   FileChangeEvent,
   WatcherErrorEvent,
-  CreateNoteResult
+  CreateNoteResult,
+  TagDetail
 } from './types'
 
 export async function openVault(path: string): Promise<VaultInfo> {
@@ -70,6 +71,10 @@ export async function getAllTags(): Promise<string[]> {
   return invoke('get_all_tags')
 }
 
+export async function getTagDetails(tag: string): Promise<TagDetail> {
+  return invoke('get_tag_details', { tag })
+}
+
 export async function resolveWikilink(target: string): Promise<string | null> {
   return invoke('resolve_wikilink', { target })
 }
@@ -80,10 +85,6 @@ export async function renameNote(oldPath: string, newPath: string): Promise<void
 
 export async function deleteNote(path: string): Promise<void> {
   return invoke('delete_note', { path })
-}
-
-export async function deleteFolder(path: string): Promise<void> {
-  return invoke('delete_folder', { path })
 }
 
 export async function search(
@@ -147,4 +148,26 @@ export async function createFolder(): Promise<{ path: string; name: string }> {
 
 export async function deleteFolder(path: string): Promise<void> {
   return invoke('delete_folder', { path })
+}
+
+export async function readPluginConfig(pluginId: string): Promise<string> {
+  return invoke('read_plugin_config', { pluginId })
+}
+
+export async function writePluginConfig(pluginId: string, data: string): Promise<void> {
+  return invoke('write_plugin_config', { pluginId, data })
+}
+
+export async function listInstalledPlugins(): Promise<{
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  authorUrl?: string
+  repo?: string
+  minAppVersion?: string
+  isDesktopOnly?: boolean
+}[]> {
+  return invoke('list_installed_plugins')
 }

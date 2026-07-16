@@ -74,3 +74,16 @@ export interface CreateNoteResult {
   path: string
   title: string
 }
+
+export interface TagOccurrence {
+  path: string
+  title: string
+  line: number
+  snippet: string
+}
+
+export interface TagDetail {
+  name: string
+  count: number
+  occurrences: TagOccurrence[]
+}

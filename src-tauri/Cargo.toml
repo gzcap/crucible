@@ -56,3 +56,12 @@ lazy_static = "1.5"
 # 哈希（vault ID 生成）
 sha2 = "0.10"
 hex = "0.4"
+
+# 动态加载原生 Rust 插件
+libloading = "0.8"
+
+# 文本差分（版本历史）
+similar = "2"
+
+# 文件复制（插件导入）
+fs_extra = "1"

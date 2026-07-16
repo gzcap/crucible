@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  Moon,
-  Sunny,
-  Monitor,
-  Minus,
-  FullScreen,
-  Close,
-} from "@element-plus/icons-vue";
-import { useThemeStore, type ThemeMode } from "../../stores/theme";
+import { Setting } from "@element-plus/icons-vue";
+import SettingsModal from "./SettingsModal.vue";
+import ThemeToggle from "./ThemeToggle.vue";
 import VaultSwitcher from "../vault/VaultSwitcher.vue";
-const themeStore = useThemeStore();
+const showSettings = ref(false);
+
+function openSettings() {
+  showSettings.value = true;
+}
+
+function closeSettings() {
+  showSettings.value = false;
+}
 
 async function handleDragStart(e: MouseEvent) {
   if ((e.target as HTMLElement).closest(".no-drag")) {
@@ -20,76 +22,36 @@ async function handleDragStart(e: MouseEvent) {
   const window = getCurrentWindow();
   await window.startDragging();
 }
-
-async function minimizeWindow() {
-  const window = getCurrentWindow();
-  await window.minimize();
-}
-
-async function toggleMaximizeWindow() {
-  const window = getCurrentWindow();
-  await window.toggleMaximize();
-}
-
-async function closeWindow() {
-  const window = getCurrentWindow();
-  await window.close();
-}
-
-function handleThemeChange(value: ThemeMode) {
-  themeStore.setMode(value);
-}
 </script>
 
 <template>
   <header class="title-bar" @mousedown="handleDragStart">
+    <!-- 左 -->
     <!-- 选择文件 -->
     <VaultSwitcher class="resource" />
-
+    <!-- 中 -->
     <div class="title-bar-center">
-      <span class="window-title">ROC Notes</span>
+      <span class="window-title"></span>
     </div>
+    <!-- 右 -->
     <div class="title-bar-right">
-      <el-select
-        v-model="themeStore.mode"
-        class="theme-selector"
-        size="small"
-        :popper-class="'theme-dropdown'"
-        @change="handleThemeChange"
-      >
-        <el-option label="亮色" value="light">
-          <Sunny :size="14" />
-        </el-option>
-        <el-option label="暗色" value="dark">
-          <Moon :size="14" />
-        </el-option>
-        <el-option label="跟随系统" value="system">
-          <Monitor :size="14" />
-        </el-option>
-      </el-select>
+      <!-- 主题切换 -->
+      <ThemeToggle />
+      <!-- 设置按钮 -->
       <button
-        class="window-control-btn no-drag"
-        @click="minimizeWindow"
-        title="Minimize"
+        class="settings-btn no-drag"
+        @click="openSettings"
+        title="设置"
       >
-        <Minus :size="12" />
+        <el-icon  :size="18">
+          <Setting />
+        </el-icon>
       </button>
-      <button
-        class="window-control-btn no-drag"
-        @click="toggleMaximizeWindow"
-        title="Maximize"
-      >
-        <FullScreen :size="12" />
-      </button>
-      <button
-        class="window-control-btn close no-drag"
-        @click="closeWindow"
-        title="Close"
-      >
-        <Close :size="12" />
-      </button>
+      
     </div>
   </header>
+  
+  <SettingsModal :visible="showSettings" @close="closeSettings" />
 </template>
 
 <style scoped>
@@ -103,7 +65,7 @@ function handleThemeChange(value: ThemeMode) {
 }
 
 .resource {
-  margin-left: 60px;
+  margin-left: 66px;
 }
 
 .title-bar-center {
@@ -122,25 +84,24 @@ function handleThemeChange(value: ThemeMode) {
   gap: 8px;
 }
 
-.theme-selector {
-  width: 100px;
+.settings-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--roc-border);
+  background: transparent;
+  margin-right: 8px;
+  border-radius: 50%;
+  color: var(--roc-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 
-.theme-dropdown {
-  background: var(--roc-bg-secondary) !important;
-  border: 1px solid var(--roc-border) !important;
-}
-
-.theme-dropdown .el-select-dropdown__item {
+.settings-btn:hover {
+  background: var(--roc-bg-tertiary);
   color: var(--roc-text-primary);
 }
 
-.theme-dropdown .el-select-dropdown__item:hover {
-  background: var(--roc-bg-tertiary);
-}
-
-.theme-dropdown .el-select-dropdown__item.selected {
-  background: rgba(0, 122, 204, 0.15);
-  color: var(--roc-accent);
-}
 </style>

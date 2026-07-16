@@ -52,7 +52,13 @@ export const useVaultStore = defineStore('vault', () => {
 
   async function init() {
     await loadVaults()
-    currentVault.value = await getCurrentVault()
+    const savedVault = await getCurrentVault()
+    
+    if (savedVault) {
+      await open(savedVault.path)
+    } else {
+      currentVault.value = null
+    }
   }
 
   return {

@@ -17,7 +17,6 @@ import SearchPanel from "../panels/SearchPanel.vue";
 import TagsPanel from "../panels/TagsPanel.vue";
 import BacklinksPanel from "../panels/BacklinksPanel.vue";
 import OutlinePanel from "../panels/OutlinePanel.vue";
-import SettingsPanel from "../panels/SettingsPanel.vue";
 
 const router = useRouter();
 const notesStore = useNotesStore();
@@ -30,9 +29,7 @@ const navItems = [
   { id: "search", icon: Search, label: "搜索" },
   { id: "tags", icon: CollectionTag, label: "标签" },
   { id: "backlinks", icon: Link, label: "反向链接" },
-  { id: "outline", icon: List, label: "大纲" },
   { id: "graph", icon: Connection, label: "图谱" },
-  { id: "settings", icon: Setting, label: "设置" },
 ];
 
 function handleNavClick(id: string) {
@@ -78,7 +75,6 @@ function handleNavClick(id: string) {
         <TagsPanel v-else-if="activeTab === 'tags'" />
         <BacklinksPanel v-else-if="activeTab === 'backlinks'" />
         <OutlinePanel v-else-if="activeTab === 'outline'" />
-        <SettingsPanel v-else-if="activeTab === 'settings'" />
       </div>
     </Transition>
   </aside>

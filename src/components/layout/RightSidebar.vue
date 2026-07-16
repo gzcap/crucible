@@ -1,37 +1,53 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import {
   FolderOpened,
   Search,
-  CollectionTag,
   Link,
   List,
   Connection,
   Setting,
 } from "@element-plus/icons-vue";
 import { useLayoutStore } from "../../stores/layout";
+import { rocApp } from "../../plugins";
+import { listen } from "@tauri-apps/api/event";
 import FilesPanel from "../panels/FilesPanel.vue";
 import SearchPanel from "../panels/SearchPanel.vue";
-import TagsPanel from "../panels/TagsPanel.vue";
 import BacklinksPanel from "../panels/BacklinksPanel.vue";
 import OutlinePanel from "../panels/OutlinePanel.vue";
 import SettingsPanel from "../panels/SettingsPanel.vue";
+import PluginPanel from "../plugins/PluginPanel.vue";
 
 const router = useRouter();
 const layoutStore = useLayoutStore();
 
 const activeTab = ref("files");
+const pluginPanels = ref<Array<{ id: string; pluginId: string; name: string; icon: string; component?: any; render?: (container: HTMLElement) => void }>>([]);
 
-const navItems = [
-  { id: "files", icon: FolderOpened, label: "资源管理器" },
-  { id: "search", icon: Search, label: "搜索" },
-  { id: "tags", icon: CollectionTag, label: "标签" },
-  { id: "backlinks", icon: Link, label: "反向链接" },
-  { id: "outline", icon: List, label: "大纲" },
-  { id: "graph", icon: Connection, label: "图谱" },
-  { id: "settings", icon: Setting, label: "设置" },
-];
+interface NavItem {
+  id: string
+  icon: any
+  iconType?: 'component' | 'emoji'
+  label: string
+}
+
+const navItems = computed<NavItem[]>(() => {
+  const items: NavItem[] = [
+    { id: "backlinks", icon: Link, iconType: 'component', label: "反向链接" },
+  ];
+  
+  pluginPanels.value.forEach(panel => {
+    items.push({
+      id: panel.id,
+      icon: panel.icon,
+      iconType: 'emoji',
+      label: panel.name,
+    });
+  });
+  
+  return items;
+});
 
 function handleNavClick(id: string) {
   if (activeTab.value === id) {
@@ -46,22 +62,81 @@ function handleNavClick(id: string) {
     router.push("/");
   }
 }
+
+function handlePanelRegistered(panel: any) {
+  const existingIndex = pluginPanels.value.findIndex(p => p.id === panel.id);
+  if (existingIndex > -1) {
+    pluginPanels.value[existingIndex] = {
+      id: panel.id,
+      pluginId: panel.pluginId,
+      name: panel.name,
+      icon: panel.icon,
+      component: panel.component,
+      render: panel.render,
+    };
+  } else {
+    pluginPanels.value.push({
+      id: panel.id,
+      pluginId: panel.pluginId,
+      name: panel.name,
+      icon: panel.icon,
+      component: panel.component,
+      render: panel.render,
+    });
+  }
+}
+
+function getActivePluginPanel() {
+  return pluginPanels.value.find(p => p.id === activeTab.value);
+}
+
+function loadPluginPanels() {
+  pluginPanels.value = [];
+  const panels = rocApp.getEnabledPluginPanels();
+  panels.forEach(handlePanelRegistered);
+}
+
+function handlePanelsUpdated() {
+  loadPluginPanels();
+  if (!pluginPanels.value.find(p => p.id === activeTab.value) && activeTab.value !== 'backlinks') {
+    activeTab.value = 'backlinks';
+  }
+}
+
+onMounted(() => {
+  rocApp.events.on('workspace:sidebar-panel-registered', handlePanelRegistered);
+  rocApp.events.on('workspace:sidebar-panels-updated', handlePanelsUpdated);
+  loadPluginPanels();
+
+  listen('roc://vault-opened', () => {
+    loadPluginPanels();
+  });
+
+  listen('roc://vault-closed', () => {
+    pluginPanels.value = [];
+    if (pluginPanels.value.find(p => p.id === activeTab.value)) {
+      activeTab.value = 'backlinks';
+    }
+  });
+});
+
+onUnmounted(() => {
+  rocApp.events.off('workspace:sidebar-panel-registered', handlePanelRegistered);
+  rocApp.events.off('workspace:sidebar-panels-updated', handlePanelsUpdated);
+});
 </script>
 
 <template>
   <aside class="sidebar">
-    <!-- 右侧工具栏具体内容 -->
     <Transition name="slide-right">
       <div v-show="layoutStore.rightSidebarVisible" class="sidebar-content">
-        <FilesPanel v-if="activeTab === 'files'" />
-        <SearchPanel v-else-if="activeTab === 'search'" />
-        <TagsPanel v-else-if="activeTab === 'tags'" />
-        <BacklinksPanel v-else-if="activeTab === 'backlinks'" />
-        <OutlinePanel v-else-if="activeTab === 'outline'" />
-        <SettingsPanel v-else-if="activeTab === 'settings'" />
+        <BacklinksPanel v-if="activeTab === 'backlinks'" />
+        <PluginPanel 
+          v-else-if="getActivePluginPanel()" 
+          :panel="getActivePluginPanel()!" 
+        />
       </div>
     </Transition>
-    <!-- 右侧工具栏 -->
     <div class="sidebar-right">
       <nav class="activity-bar">
         <button
@@ -72,7 +147,8 @@ function handleNavClick(id: string) {
           @click="handleNavClick(item.id)"
           :title="item.label"
         >
-          <component :is="item.icon" class="activity-icon" />
+          <component v-if="item.iconType === 'component'" :is="item.icon" class="activity-icon" />
+          <span v-else class="activity-icon">{{ item.icon }}</span>
         </button>
       </nav>
     </div>
@@ -95,6 +171,7 @@ function handleNavClick(id: string) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .activity-bar {
@@ -120,6 +197,9 @@ function handleNavClick(id: string) {
   transition:
     background 0.15s,
     color 0.15s;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .activity-item:hover {
@@ -141,6 +221,7 @@ function handleNavClick(id: string) {
   height: var(--roc-sidebar-height);
   border-radius: var(--roc-border-radius);
   background: var(--roc-bg-primary);
+  flex-shrink: 0;
 }
 
 .slide-right-enter-active,

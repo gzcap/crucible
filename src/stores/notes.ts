@@ -10,9 +10,11 @@ import {
   createNote,
   createFolder,
   deleteNote,
-  deleteFolder
+  deleteFolder,
+  renameNote
 } from '../lib/tauri'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { dirname, join } from '@tauri-apps/api/path'
 import { useVaultStore } from './vault'
 import { useGraphStore } from './graph'
 
@@ -86,6 +88,20 @@ export const useNotesStore = defineStore('notes', () => {
   async function removeFolder(path: string) {
     await deleteFolder(path)
     await loadNotes()
+  }
+
+  async function renameItem(oldPath: string, newName: string) {
+    const dir = await dirname(oldPath)
+    const newPath = await join(dir, newName)
+    await renameNote(oldPath, newPath)
+    await loadNotes()
+    
+    tabs.value = tabs.value.map(tab => 
+      tab.path === oldPath ? { ...tab, path: newPath } : tab
+    )
+    if (currentPath.value === oldPath) {
+      currentPath.value = newPath
+    }
   }
 
   async function loadNotes() {
@@ -348,6 +364,7 @@ export const useNotesStore = defineStore('notes', () => {
     createNewFolder,
     removeNote,
     removeFolder,
+    renameItem,
     setDirty,
     setSearchQuery,
     setupEventListeners
