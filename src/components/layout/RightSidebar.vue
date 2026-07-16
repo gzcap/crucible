@@ -23,7 +23,7 @@ const router = useRouter();
 const layoutStore = useLayoutStore();
 
 const activeTab = ref("files");
-const pluginPanels = ref<Array<{ id: string; name: string; icon: string; component?: any; render?: (container: HTMLElement) => void }>>([]);
+const pluginPanels = ref<Array<{ id: string; pluginId: string; name: string; icon: string; component?: any; render?: (container: HTMLElement) => void }>>([]);
 
 interface NavItem {
   id: string
@@ -64,13 +64,26 @@ function handleNavClick(id: string) {
 }
 
 function handlePanelRegistered(panel: any) {
-  pluginPanels.value.push({
-    id: panel.id,
-    name: panel.name,
-    icon: panel.icon,
-    component: panel.component,
-    render: panel.render,
-  });
+  const existingIndex = pluginPanels.value.findIndex(p => p.id === panel.id);
+  if (existingIndex > -1) {
+    pluginPanels.value[existingIndex] = {
+      id: panel.id,
+      pluginId: panel.pluginId,
+      name: panel.name,
+      icon: panel.icon,
+      component: panel.component,
+      render: panel.render,
+    };
+  } else {
+    pluginPanels.value.push({
+      id: panel.id,
+      pluginId: panel.pluginId,
+      name: panel.name,
+      icon: panel.icon,
+      component: panel.component,
+      render: panel.render,
+    });
+  }
 }
 
 function getActivePluginPanel() {
@@ -79,12 +92,20 @@ function getActivePluginPanel() {
 
 function loadPluginPanels() {
   pluginPanels.value = [];
-  const panels = rocApp.workspace.getSidebarPanels();
+  const panels = rocApp.getEnabledPluginPanels();
   panels.forEach(handlePanelRegistered);
+}
+
+function handlePanelsUpdated() {
+  loadPluginPanels();
+  if (!pluginPanels.value.find(p => p.id === activeTab.value) && activeTab.value !== 'backlinks') {
+    activeTab.value = 'backlinks';
+  }
 }
 
 onMounted(() => {
   rocApp.events.on('workspace:sidebar-panel-registered', handlePanelRegistered);
+  rocApp.events.on('workspace:sidebar-panels-updated', handlePanelsUpdated);
   loadPluginPanels();
 
   listen('roc://vault-opened', () => {
@@ -101,6 +122,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   rocApp.events.off('workspace:sidebar-panel-registered', handlePanelRegistered);
+  rocApp.events.off('workspace:sidebar-panels-updated', handlePanelsUpdated);
 });
 </script>
 

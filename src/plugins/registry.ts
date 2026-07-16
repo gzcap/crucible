@@ -126,6 +126,11 @@ class VaultImpl implements Vault {
 class WorkspaceImpl implements Workspace {
   private sidebarPanels = new Map<string, SidebarPanel>()
   private settingTabs = new Map<string, PluginSettingTab>()
+  private currentPluginId: string | null = null
+
+  setCurrentPluginId(pluginId: string | null): void {
+    this.currentPluginId = pluginId
+  }
 
   get activeFilePath(): string | null {
     return useNotesStore().currentPath
@@ -150,9 +155,13 @@ class WorkspaceImpl implements Workspace {
   }
 
   registerSidebarPanel(panel: SidebarPanel): void {
-    this.sidebarPanels.set(panel.id, panel)
-    app.events.emit('workspace:sidebar-panel-registered', panel)
-    console.log('[Workspace] Registered sidebar panel:', panel.name)
+    const panelWithPluginId: SidebarPanel = {
+      ...panel,
+      pluginId: panel.pluginId || this.currentPluginId || panel.id.split('-')[0]
+    }
+    this.sidebarPanels.set(panel.id, panelWithPluginId)
+    app.events.emit('workspace:sidebar-panel-registered', panelWithPluginId)
+    console.log('[Workspace] Registered sidebar panel:', panel.name, 'for plugin:', panelWithPluginId.pluginId)
   }
 
   getSidebarPanels(): SidebarPanel[] {
@@ -163,6 +172,30 @@ class WorkspaceImpl implements Workspace {
     this.sidebarPanels.clear()
     this.settingTabs.clear()
     console.log('[Workspace] Cleared all panels')
+  }
+
+  removePanelsByPlugin(pluginId: string): void {
+    const toRemove: string[] = []
+    this.sidebarPanels.forEach((panel, id) => {
+      if (panel.pluginId === pluginId) {
+        toRemove.push(id)
+      }
+    })
+    toRemove.forEach(id => {
+      this.sidebarPanels.delete(id)
+    })
+
+    const tabsToRemove: string[] = []
+    this.settingTabs.forEach((tab, id) => {
+      if (id.startsWith(`${pluginId}-`)) {
+        tabsToRemove.push(id)
+      }
+    })
+    tabsToRemove.forEach(id => {
+      this.settingTabs.delete(id)
+    })
+
+    console.log(`[Workspace] Removed ${toRemove.length} panels for plugin: ${pluginId}`)
   }
 
   openSidebarPanel(panelId: string): void {
@@ -500,7 +533,7 @@ export class App implements AppInterface {
    * 启用插件
    * @param pluginId 插件ID
    */
-  enablePlugin(pluginId: string): void {
+  async enablePlugin(pluginId: string): Promise<void> {
     const entry = this.plugins.get(pluginId)
     if (!entry) {
       console.error(`[App] Plugin "${pluginId}" not found`)
@@ -513,14 +546,17 @@ export class App implements AppInterface {
     }
 
     try {
+      this.workspace.setCurrentPluginId(pluginId)
       const plugin = new entry.pluginClass(this)
       entry.instance = plugin
       entry.enabled = true
 
-      plugin.onload()
+      await plugin.onload()
 
+      this.workspace.setCurrentPluginId(null)
       console.log(`[App] Enabled plugin: ${entry.manifest.name}`)
     } catch (error) {
+      this.workspace.setCurrentPluginId(null)
       console.error(`[App] Failed to enable plugin "${pluginId}":`, error)
       entry.enabled = false
       entry.instance = undefined
@@ -544,14 +580,19 @@ export class App implements AppInterface {
     }
 
     try {
-      entry.instance.unload()
-      entry.enabled = false
-      entry.instance = undefined
+        if (typeof entry.instance.onunload === 'function') {
+          entry.instance.onunload()
+        }
+        entry.enabled = false
+        entry.instance = undefined
 
-      console.log(`[App] Disabled plugin: ${entry.manifest.name}`)
-    } catch (error) {
-      console.error(`[App] Failed to disable plugin "${pluginId}":`, error)
-    }
+        this.workspace.removePanelsByPlugin(pluginId)
+        this.events.emit('workspace:sidebar-panels-updated')
+
+        console.log(`[App] Disabled plugin: ${entry.manifest.name}`)
+      } catch (error) {
+        console.error(`[App] Failed to disable plugin "${pluginId}":`, error)
+      }
   }
 
   /**
@@ -587,7 +628,24 @@ export class App implements AppInterface {
   clearPluginResources(): void {
     this.workspace.clearPanels()
     this.commands.clearCommands()
+    this.plugins.clear()
     console.log('[App] Cleared all plugin resources')
+  }
+
+  /**
+   * 获取已启用插件注册的侧边栏面板
+   * @returns 已启用插件的侧边栏面板列表
+   */
+  getEnabledPluginPanels(): any[] {
+    const allPanels = this.workspace.getSidebarPanels()
+    const enabledPluginIds = new Set(
+      Array.from(this.plugins.values())
+        .filter(p => p.enabled)
+        .map(p => p.manifest.id)
+    )
+    return allPanels.filter(panel => {
+      return enabledPluginIds.has(panel.pluginId)
+    })
   }
 
   /**

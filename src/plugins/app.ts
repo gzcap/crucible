@@ -55,6 +55,10 @@ export interface Workspace {
   openCommandPalette(): void
   /** 清空所有面板（切换 vault 时使用） */
   clearPanels(): void
+  /** 移除指定插件注册的面板（禁用插件时使用） */
+  removePanelsByPlugin(pluginId: string): void
+  /** 设置当前正在注册面板的插件ID（内部使用） */
+  setCurrentPluginId(pluginId: string | null): void
 }
 
 /**
@@ -63,6 +67,8 @@ export interface Workspace {
 export interface SidebarPanel {
   /** 面板唯一标识符 */
   id: string
+  /** 面板所属插件ID */
+  pluginId: string
   /** 面板显示名称 */
   name: string
   /** 面板图标（emoji 或图标名称） */

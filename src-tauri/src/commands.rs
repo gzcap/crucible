@@ -489,15 +489,7 @@ pub fn delete_note(state: State<'_, AppState>, path: String) -> Result<()> {
         fs::remove_file(&abs_path)?;
     }
 
-    let _ = state.link_index.remove_note(&path);
-    let _ = state.search_index.remove_note(&path);
-
-    let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
-        kind: "delete".to_string(),
-        path: path.clone(),
-        new_path: None,
-    });
-
+    // 索引更新和事件发送由文件监控器处理，避免重复操作导致卡死
     Ok(())
 }
 
@@ -518,13 +510,8 @@ pub fn delete_folder(state: State<'_, AppState>, path: String) -> Result<()> {
         fs::remove_dir_all(&abs_path)?;
     }
 
-    let index_dir = state.get_index_dir();
-    if let Some(vault_id) = state.current_vault.read().as_ref().map(|v| v.id.clone()) {
-        let _ = state.link_index.rebuild_from_vault(&vault_path);
-        let _ = state.search_index.open_or_create(&index_dir, &vault_id);
-        let _ = state.search_index.build_from_vault(&vault_path);
-    }
-
+    // 文件夹删除后，监控器会为每个 .md 文件触发删除事件
+    // 这里发送一个事件通知前端文件夹被删除，前端会调用 loadNotes() 重新加载
     let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
         kind: "delete".to_string(),
         path: path.clone(),

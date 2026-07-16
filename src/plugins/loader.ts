@@ -31,16 +31,20 @@ export class PluginLoader {
     try {
       await this.initPluginSystem()
 
-      const manifests = await invoke<PluginManifest[]>('list_installed_plugins')
+      const pluginInfos = await invoke<Array<PluginManifest & { enabled: boolean }>>('list_installed_plugins')
 
-      for (const manifest of manifests) {
+      for (const pluginInfo of pluginInfos) {
+        if (!pluginInfo.enabled) {
+          continue
+        }
+
         try {
-          const plugin = await this.loadPluginFromBackend(manifest)
+          const plugin = await this.loadPluginFromBackend(pluginInfo)
           if (plugin) {
             plugins.push(plugin)
           }
         } catch (error) {
-          console.error(`[PluginLoader] Failed to load plugin ${manifest.id}:`, error)
+          console.error(`[PluginLoader] Failed to load plugin ${pluginInfo.id}:`, error)
         }
       }
     } catch (error) {
@@ -55,7 +59,7 @@ export class PluginLoader {
       const mainContent = await invoke<string>('read_plugin_main', { pluginId: manifest.id })
       
       const module = await this.evalPluginModule(mainContent)
-      return this.instantiatePluginWithManifest(module, manifest)
+      return await this.instantiatePluginWithManifest(module, manifest)
     } catch (error) {
       console.error(`[PluginLoader] Failed to load plugin ${manifest.id} from backend:`, error)
       return null
@@ -131,7 +135,7 @@ export class PluginLoader {
   private async instantiatePluginFromSource(content: string, manifest: PluginManifest): Promise<Plugin | null> {
     try {
       const module = await this.evalPluginModule(content)
-      return this.instantiatePluginWithManifest(module, manifest)
+      return await this.instantiatePluginWithManifest(module, manifest)
     } catch (error) {
       console.error('[PluginLoader] Failed to evaluate plugin module:', error)
       return null
@@ -198,7 +202,7 @@ export class PluginLoader {
     }
   }
 
-  private instantiatePluginWithManifest(module: any, manifest: PluginManifest): Plugin | null {
+  private async instantiatePluginWithManifest(module: any, manifest: PluginManifest): Promise<Plugin | null> {
     try {
       const pluginClass = module.default || module
       if (typeof pluginClass !== 'function') {
@@ -219,7 +223,7 @@ export class PluginLoader {
       (pluginClass as any).manifest = manifest
 
       app.registerPlugin(pluginClass)
-      app.enablePlugin(manifest.id)
+      await app.enablePlugin(manifest.id)
 
       this.loadedPlugins.add(manifest.id)
       return app.getPlugin(manifest.id)
@@ -278,11 +282,6 @@ export class PluginLoader {
         (pluginClass as any).manifest = { id: pluginId }
         app.registerPlugin(pluginClass)
         app.enablePlugin(pluginId)
-        
-        const pluginInstance = app.getPlugin(pluginId)
-        if (pluginInstance && typeof pluginInstance.onload === 'function') {
-          await pluginInstance.onload()
-        }
         
         this.loadedPlugins.add(pluginId)
       }

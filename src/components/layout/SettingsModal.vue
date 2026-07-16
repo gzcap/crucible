@@ -178,9 +178,11 @@ onMounted(() => {
       <div v-if="visible" class="settings-overlay" @click.self="closeModal">
         <div class="settings-modal">
           <div class="settings-header">
-            <span class="settings-title">选项</span>
+            <span class="settings-title">设置</span>
             <button class="close-btn" @click="closeModal">
-              <Close :size="16" />
+              <el-icon :size="16">
+                <Close />
+              </el-icon>
             </button>
           </div>
 

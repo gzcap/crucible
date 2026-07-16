@@ -88,8 +88,10 @@ async function loadPlugins() {
 async function togglePlugin(pluginId: string, enabled: unknown) {
   try {
     if (enabled) {
+      await invoke('load_plugin', { pluginId })
       await pluginLoader.enablePlugin(pluginId)
     } else {
+      await invoke('unload_plugin', { pluginId })
       await pluginLoader.disablePlugin(pluginId)
     }
     await loadPlugins()

@@ -87,26 +87,48 @@ impl PluginApi {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct PluginState {
+    enabled_plugins: Vec<String>,
+}
+
 pub struct PluginManager {
     plugins: HashMap<String, PluginInstance>,
     api: Arc<PluginApi>,
     plugin_dir: PathBuf,
+    state_path: PathBuf,
 }
 
 impl PluginManager {
     pub fn new(vault_path: PathBuf) -> Self {
         let plugin_dir = vault_path.join(".roc").join("plugins");
+        let state_path = vault_path.join(".roc").join("plugins.json");
         let api = Arc::new(PluginApi::new(vault_path));
 
         Self {
             plugins: HashMap::new(),
             api,
             plugin_dir,
+            state_path,
         }
     }
 
     pub fn scan_plugins(&mut self) -> Result<Vec<PluginManifest>> {
         let mut manifests = Vec::new();
+
+        let enabled_plugins: Vec<String> = if self.state_path.exists() {
+            if let Ok(content) = fs::read_to_string(&self.state_path) {
+                if let Ok(state) = serde_json::from_str::<PluginState>(&content) {
+                    state.enabled_plugins
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
 
         if !self.plugin_dir.exists() {
             return Ok(manifests);
@@ -121,11 +143,12 @@ impl PluginManager {
                 if manifest_path.exists() {
                     if let Ok(content) = fs::read_to_string(&manifest_path) {
                         if let Ok(mut manifest) = serde_json::from_str::<PluginManifest>(&content) {
-                            manifest.id = path
+                            let plugin_id = path
                                 .file_name()
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(&manifest.id)
                                 .to_string();
+                            manifest.id = plugin_id.clone();
                             manifests.push(manifest.clone());
 
                             let plugin_type = if manifest.plugin_type.as_deref() == Some("native") {
@@ -134,12 +157,14 @@ impl PluginManager {
                                 PluginType::Js
                             };
 
+                            let is_enabled = enabled_plugins.contains(&plugin_id);
+
                             self.plugins.insert(
-                                manifest.id.clone(),
+                                plugin_id,
                                 PluginInstance {
                                     manifest,
                                     plugin_type,
-                                    enabled: false,
+                                    enabled: is_enabled,
                                     data: Arc::new(RwLock::new(serde_json::Value::Null)),
                                 },
                             );
@@ -149,7 +174,29 @@ impl PluginManager {
             }
         }
 
+        if enabled_plugins.is_empty() && !manifests.is_empty() {
+            self.save_state()?;
+        }
+
         Ok(manifests)
+    }
+
+    pub fn save_state(&self) -> Result<()> {
+        let enabled_plugins: Vec<String> = self.plugins
+            .values()
+            .filter(|p| p.enabled)
+            .map(|p| p.manifest.id.clone())
+            .collect();
+
+        let state = PluginState { enabled_plugins };
+        let content = serde_json::to_string_pretty(&state)?;
+
+        if let Some(parent) = self.state_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&self.state_path, content)?;
+
+        Ok(())
     }
 
     pub fn load_plugin(&mut self, plugin_id: &str) -> Result<()> {
@@ -168,6 +215,7 @@ impl PluginManager {
         }
 
         instance.enabled = true;
+        self.save_state()?;
         Ok(())
     }
 
@@ -186,6 +234,7 @@ impl PluginManager {
         }
 
         instance.enabled = false;
+        self.save_state()?;
         Ok(())
     }
 

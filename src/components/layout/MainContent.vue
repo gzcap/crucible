@@ -41,6 +41,9 @@ async function handleDragStart(e: MouseEvent) {
     </div>
 
     <div class="editor-area" v-if="notesStore.currentPath && !isGraphView">
+      <div class="editor-header">
+        <span class="editor-filename">{{ notesStore.currentTab?.title || notesStore.currentPath }}</span>
+      </div>
       <EditorPane />
     </div>
 
@@ -233,6 +236,19 @@ async function handleDragStart(e: MouseEvent) {
   flex: 1;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
+}
+
+.editor-header {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--roc-border);
+  background: var(--roc-bg-secondary);
+}
+
+.editor-filename {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--roc-text-primary);
 }
 
 .editor-pane-wrapper {
