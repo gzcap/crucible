@@ -32,7 +32,7 @@ import {
   getAllTags,
   resolveWikilink,
 } from '../lib/tauri'
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeTextFile, mkdir } from '@tauri-apps/plugin-fs'
 
 /**
  * 插件注册表项
@@ -111,7 +111,7 @@ class VaultImpl implements Vault {
   }
 
   async createFolder(folderPath: string): Promise<void> {
-    await createFolder()
+    await mkdir(folderPath, { recursive: true })
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
@@ -157,6 +157,12 @@ class WorkspaceImpl implements Workspace {
 
   getSidebarPanels(): SidebarPanel[] {
     return Array.from(this.sidebarPanels.values())
+  }
+
+  clearPanels(): void {
+    this.sidebarPanels.clear()
+    this.settingTabs.clear()
+    console.log('[Workspace] Cleared all panels')
   }
 
   openSidebarPanel(panelId: string): void {
@@ -440,6 +446,11 @@ class CommandsImpl implements Commands {
   getCommands(): Command[] {
     return Array.from(this.commands.values())
   }
+
+  clearCommands(): void {
+    this.commands.clear()
+    console.log('[Commands] Cleared all commands')
+  }
 }
 
 /**
@@ -567,6 +578,16 @@ export class App implements AppInterface {
         this.enablePlugin(pluginId)
       }
     })
+  }
+
+  /**
+   * 清空所有插件注册的资源（面板、命令等）
+   * 用于切换 vault 时清理旧插件的资源
+   */
+  clearPluginResources(): void {
+    this.workspace.clearPanels()
+    this.commands.clearCommands()
+    console.log('[App] Cleared all plugin resources')
   }
 
   /**

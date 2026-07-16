@@ -57,6 +57,18 @@ pub enum AppError {
     /// 内部错误
     #[error("internal error: {0}")]
     InternalError(String),
+
+    /// 插件未找到
+    #[error("plugin not found: {0}")]
+    PluginNotFound(String),
+
+    /// 插件加载错误
+    #[error("plugin load error: {0}: {1}")]
+    PluginLoadError(String, String),
+
+    /// 插件权限不足
+    #[error("plugin permission denied: {0}")]
+    PluginPermissionDenied(String),
 }
 
 /// 应用结果类型别名
@@ -123,5 +135,11 @@ impl From<walkdir::Error> for AppError {
 impl From<tantivy::query::QueryParserError> for AppError {
     fn from(e: tantivy::query::QueryParserError) -> Self {
         AppError::SearchError(e.to_string())
+    }
+}
+
+impl From<fs_extra::error::Error> for AppError {
+    fn from(e: fs_extra::error::Error) -> Self {
+        AppError::IoError(e.to_string())
     }
 }

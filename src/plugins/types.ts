@@ -180,11 +180,44 @@ export abstract class Plugin extends Component {
   static manifest: PluginManifest
 
   /**
+   * 获取插件数据目录路径
+   * 参考 Obsidian 的做法，在 vault 根目录下创建 .roc/plugins/{id}/ 目录
+   * @returns 插件数据目录路径，如果没有打开 vault 则返回 null
+   */
+  getDataPath(): string | null {
+    const vaultPath = this.app.vault.path
+    if (!vaultPath) return null
+    return `${vaultPath}/.roc/plugins/${this.manifest.id}`
+  }
+
+  /**
+   * 获取插件数据文件路径
+   * @returns 插件数据文件路径，如果没有打开 vault 则返回 null
+   */
+  getDataFilePath(): string | null {
+    const dataPath = this.getDataPath()
+    if (!dataPath) return null
+    return `${dataPath}/data.json`
+  }
+
+  /**
    * 加载插件数据
-   * 从 localStorage 读取插件的持久化配置
+   * 参考 Obsidian 的做法，从 vault 根目录的 .roc/plugins/{id}/data.json 读取数据，
+   * 如果没有打开 vault 或读取失败，则回退到 localStorage。
    * @returns 插件数据对象
    */
   async loadData<T = unknown>(): Promise<T | null> {
+    const filePath = this.getDataFilePath()
+    
+    if (filePath) {
+      try {
+        const content = await this.app.vault.read(filePath)
+        return JSON.parse(content)
+      } catch {
+        console.debug(`[Plugin] Failed to read data from ${filePath}, falling back to localStorage`)
+      }
+    }
+
     const key = `roc-plugin-data-${this.manifest.id}`
     const data = localStorage.getItem(key)
     return data ? JSON.parse(data) : null
@@ -192,10 +225,28 @@ export abstract class Plugin extends Component {
 
   /**
    * 保存插件数据
-   * 将插件配置持久化到 localStorage
+   * 参考 Obsidian 的做法，写入到 vault 根目录的 .roc/plugins/{id}/data.json，
+   * 如果没有打开 vault 或写入失败，则回退到 localStorage。
    * @param data 要保存的数据对象
    */
   async saveData(data: unknown): Promise<void> {
+    const filePath = this.getDataFilePath()
+    const dataPath = this.getDataPath()
+    
+    if (filePath && dataPath) {
+      try {
+        try {
+          await this.app.vault.createFolder(dataPath)
+        } catch {
+        }
+        
+        await this.app.vault.write(filePath, JSON.stringify(data, null, 2))
+        return
+      } catch (error) {
+        console.debug(`[Plugin] Failed to write data to ${filePath}, falling back to localStorage:`, error)
+      }
+    }
+
     const key = `roc-plugin-data-${this.manifest.id}`
     localStorage.setItem(key, JSON.stringify(data))
   }

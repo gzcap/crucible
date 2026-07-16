@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "roc",
-        "width": 800,
-        "height": 600,
+        "width": 1000,
+        "height": 700,
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
@@ -39,5 +39,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "fs": {
+      "requireLiteralLeadingDot": false
+    }
   }
 }

@@ -44,6 +44,8 @@ use crate::error::{AppError, Result};
 use crate::index::graph::{Backlink, GraphData};
 use crate::index::search::{SearchMode, SearchResult};
 use crate::parser::{extract_tags, LinkRef, NoteMeta};
+use crate::plugin_runtime::{PluginManager, PluginManifest};
+use crate::security::PermissionManager;
 use crate::state::AppState;
 use crate::vault::{generate_vault_id, VaultInfo};
 use crate::watcher::FileWatcher;
@@ -156,6 +158,8 @@ pub fn open_vault(state: State<'_, AppState>, path: String) -> Result<VaultInfo>
     state.link_index.rebuild_from_vault(&vault_path)?;
     state.search_index.build_from_vault(&vault_path)?;
 
+    state.init_plugin_manager(vault_path.clone());
+
     let _ = app_handle.emit("roc://vault-opened", &vault_info);
 
     Ok(vault_info)
@@ -237,6 +241,14 @@ pub fn close_vault(state: State<'_, AppState>) -> Result<()> {
     }
 
     state.search_index.close();
+
+    {
+        let mut pm = state.plugin_manager.lock();
+        if let Some(ref mut manager) = *pm {
+            manager.unload_all_plugins();
+        }
+        *pm = None;
+    }
 
     let _ = state.app_handle.emit("roc://vault-closed", ());
 
@@ -422,7 +434,7 @@ pub fn rename_note(
 
     fs::rename(&abs_old, &abs_new)?;
 
-    state.link_index.on_rename(&old_path, &new_path, &vault_path)?;
+    let modified_files = state.link_index.on_rename(&old_path, &new_path, &vault_path)?;
 
     let content = fs::read_to_string(&abs_new)?;
     let tags = extract_tags(&content);
@@ -431,6 +443,25 @@ pub fn rename_note(
 
     state.search_index.upsert_note(&new_path, &content, &tags, mtime)?;
     state.search_index.remove_note(&old_path)?;
+
+    // 为每个被修改的引用源 emit modify 事件
+    for modified_path in modified_files {
+        let modified_content = fs::read_to_string(vault_path.join(&modified_path)).unwrap_or_default();
+        let modified_tags = extract_tags(&modified_content);
+        let modified_mtime = fs::metadata(vault_path.join(&modified_path))
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|t| t.elapsed().ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        state.search_index.upsert_note(&modified_path, &modified_content, &modified_tags, modified_mtime)?;
+
+        let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
+            kind: "modify".to_string(),
+            path: modified_path,
+            new_path: None,
+        });
+    }
 
     let _ = state.app_handle.emit("roc://file-changed", crate::watcher::FileChangeEvent {
         kind: "rename".to_string(),
@@ -627,4 +658,331 @@ pub fn reindex_all(state: State<'_, AppState>) -> Result<()> {
 #[tauri::command]
 pub fn get_graph(state: State<'_, AppState>) -> Result<GraphData> {
     Ok(state.link_index.export_graph())
+}
+
+// ========== 插件管理命令 ==========
+
+/// 读取插件配置
+///
+/// 从 `{vault}/.roc/plugins/{plugin-id}/data.json` 读取插件的持久化配置。
+#[tauri::command]
+pub fn read_plugin_config(state: State<'_, AppState>, plugin_id: String) -> Result<String> {
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+
+    let plugin_dir = vault_path.join(".roc").join("plugins").join(&plugin_id);
+    let data_path = plugin_dir.join("data.json");
+
+    if data_path.exists() {
+        Ok(fs::read_to_string(data_path)?)
+    } else {
+        Ok("{}".to_string())
+    }
+}
+
+/// 写入插件配置
+///
+/// 将插件配置持久化到 `{vault}/.roc/plugins/{plugin-id}/data.json`。
+#[tauri::command]
+pub fn write_plugin_config(state: State<'_, AppState>, plugin_id: String, data: String) -> Result<()> {
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+
+    let plugin_dir = vault_path.join(".roc").join("plugins").join(&plugin_id);
+    fs::create_dir_all(&plugin_dir)?;
+
+    let data_path = plugin_dir.join("data.json");
+    fs::write(data_path, data)?;
+
+    Ok(())
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct PluginInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    pub author: Option<String>,
+    pub author_url: Option<String>,
+    pub repo: Option<String>,
+    pub min_app_version: Option<String>,
+    pub is_desktop_only: Option<bool>,
+    pub permissions: Option<Vec<String>>,
+    pub enabled: bool,
+}
+
+/// 获取已安装的插件列表
+///
+/// 扫描 `{vault}/.roc/plugins/` 目录，读取每个插件的 `manifest.json` 文件。
+#[tauri::command]
+pub fn list_installed_plugins(state: State<'_, AppState>) -> Result<Vec<PluginInfo>> {
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+
+    let plugins_dir = vault_path.join(".roc").join("plugins");
+
+    if !plugins_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut plugin_infos = Vec::new();
+
+    let pm = state.plugin_manager.lock();
+    let manager = pm.as_ref();
+
+    for entry in fs::read_dir(plugins_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            let manifest_path = path.join("manifest.json");
+            if manifest_path.exists() {
+                if let Ok(content) = fs::read_to_string(&manifest_path) {
+                    if let Ok(manifest) = serde_json::from_str::<PluginManifest>(&content) {
+                        let plugin_id = path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(&manifest.id)
+                            .to_string();
+
+                        let enabled = manager.map(|m| m.is_enabled(&plugin_id)).unwrap_or(false);
+
+                        plugin_infos.push(PluginInfo {
+                            id: plugin_id,
+                            name: manifest.name,
+                            version: manifest.version,
+                            description: manifest.description,
+                            author: manifest.author,
+                            author_url: manifest.author_url,
+                            repo: manifest.repo,
+                            min_app_version: manifest.min_app_version,
+                            is_desktop_only: manifest.is_desktop_only,
+                            permissions: manifest.permissions,
+                            enabled,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(plugin_infos)
+}
+
+#[tauri::command]
+pub fn load_plugin(state: State<'_, AppState>, plugin_id: String) -> Result<()> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+    manager.load_plugin(&plugin_id)
+}
+
+#[tauri::command]
+pub fn unload_plugin(state: State<'_, AppState>, plugin_id: String) -> Result<()> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+    manager.unload_plugin(&plugin_id)
+}
+
+#[tauri::command]
+pub fn load_all_plugins(state: State<'_, AppState>) -> Result<Vec<String>> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+    manager.load_all_plugins()
+}
+
+#[tauri::command]
+pub fn unload_all_plugins(state: State<'_, AppState>) -> Result<()> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+    manager.unload_all_plugins();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn init_plugin_system(state: State<'_, AppState>) -> Result<()> {
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+
+    state.init_plugin_manager(vault_path);
+
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::InternalError("plugin manager not initialized".to_string()))?;
+
+    manager.scan_plugins()?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reload_plugin(state: State<'_, AppState>, plugin_id: String) -> Result<()> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+
+    let was_enabled = manager.is_enabled(&plugin_id);
+
+    if was_enabled {
+        manager.unload_plugin(&plugin_id)?;
+    }
+
+    manager.scan_plugins()?;
+
+    if was_enabled {
+        manager.load_plugin(&plugin_id)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_plugin_status(state: State<'_, AppState>, plugin_id: String) -> Result<bool> {
+    let pm = state.plugin_manager.lock();
+    let manager = pm.as_ref().ok_or(AppError::NoVaultOpen)?;
+    Ok(manager.is_enabled(&plugin_id))
+}
+
+#[tauri::command]
+pub fn enable_plugin(state: State<'_, AppState>, plugin_id: String) -> Result<()> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+    manager.load_plugin(&plugin_id)
+}
+
+#[tauri::command]
+pub fn disable_plugin(state: State<'_, AppState>, plugin_id: String) -> Result<()> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+    manager.unload_plugin(&plugin_id)
+}
+
+#[tauri::command]
+pub fn get_plugin_manifest(state: State<'_, AppState>, plugin_id: String) -> Result<PluginManifest> {
+    let pm = state.plugin_manager.lock();
+    let manager = pm.as_ref().ok_or(AppError::NoVaultOpen)?;
+    let instance = manager.get_plugin(&plugin_id)
+        .ok_or(AppError::PluginNotFound(plugin_id))?;
+    Ok(instance.manifest.clone())
+}
+
+#[tauri::command]
+pub fn read_plugin_main(state: State<'_, AppState>, plugin_id: String) -> Result<String> {
+    let pm = state.plugin_manager.lock();
+    let manager = pm.as_ref().ok_or(AppError::NoVaultOpen)?;
+    let instance = manager.get_plugin(&plugin_id)
+        .ok_or(AppError::PluginNotFound(plugin_id.clone()))?;
+    
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+    
+    let main_path = vault_path.join(".roc").join("plugins").join(&plugin_id).join("main.js");
+    fs::read_to_string(main_path).map_err(|e| AppError::PluginLoadError(plugin_id, e.to_string()))
+}
+
+#[tauri::command]
+pub fn get_plugin_data(state: State<'_, AppState>, plugin_id: String) -> Result<String> {
+    let pm = state.plugin_manager.lock();
+    let manager = pm.as_ref().ok_or(AppError::NoVaultOpen)?;
+    manager.read_plugin_data(&plugin_id)
+}
+
+#[tauri::command]
+pub fn set_plugin_data(state: State<'_, AppState>, plugin_id: String, data: String) -> Result<()> {
+    let pm = state.plugin_manager.lock();
+    let manager = pm.as_ref().ok_or(AppError::NoVaultOpen)?;
+    manager.write_plugin_data(&plugin_id, &data)
+}
+
+#[tauri::command]
+pub fn reload_all_plugins(state: State<'_, AppState>) -> Result<()> {
+    let mut pm = state.plugin_manager.lock();
+    let manager = pm.as_mut().ok_or(AppError::NoVaultOpen)?;
+    manager.unload_all_plugins();
+    manager.scan_plugins()?;
+    manager.load_all_plugins()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_dir(state: State<'_, AppState>, dir: String) -> Result<Vec<serde_json::Value>> {
+    let mut entries = Vec::new();
+    
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        
+        let mut obj = serde_json::Map::new();
+        obj.insert("name".to_string(), serde_json::Value::String(
+            entry.file_name().to_string_lossy().to_string()
+        ));
+        obj.insert("isDirectory".to_string(), serde_json::Value::Bool(path.is_dir()));
+        obj.insert("isFile".to_string(), serde_json::Value::Bool(path.is_file()));
+        obj.insert("path".to_string(), serde_json::Value::String(path.to_string_lossy().to_string()));
+        
+        entries.push(serde_json::Value::Object(obj));
+    }
+    
+    Ok(entries)
+}
+
+#[tauri::command]
+pub fn read_text_file(state: State<'_, AppState>, file_path: String) -> Result<String> {
+    Ok(fs::read_to_string(file_path)?)
+}
+
+#[tauri::command]
+pub fn copy_plugin(state: State<'_, AppState>, source_path: String, target_dir: String) -> Result<()> {
+    let source = PathBuf::from(&source_path);
+    let target = PathBuf::from(&target_dir).join(source.file_name().unwrap());
+    
+    if source.is_dir() {
+        fs_extra::dir::copy(&source, &target_dir, &fs_extra::dir::CopyOptions::new())?;
+    } else {
+        fs_extra::file::copy(&source, &target, &fs_extra::file::CopyOptions::new())?;
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub fn uninstall_plugin(state: State<'_, AppState>, plugin_id: String) -> Result<()> {
+    let vault_path = state
+        .current_vault
+        .read()
+        .as_ref()
+        .map(|v| v.path.clone())
+        .ok_or(AppError::NoVaultOpen)?;
+
+    let plugin_dir = vault_path.join(".roc").join("plugins").join(&plugin_id);
+
+    if !plugin_dir.exists() {
+        return Err(AppError::PluginNotFound(plugin_id));
+    }
+
+    let mut pm = state.plugin_manager.lock();
+    if let Some(ref mut manager) = *pm {
+        let _ = manager.unload_plugin(&plugin_id);
+    }
+
+    fs_extra::dir::remove(&plugin_dir)?;
+
+    Ok(())
 }

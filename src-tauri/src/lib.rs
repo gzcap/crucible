@@ -29,10 +29,14 @@
 //! - **FileWatcher**: 使用 notify 库监听文件系统变化
 //! - **AppState**: 全局状态容器，持有所有共享资源
 
+mod api_binding;
 mod commands;
 mod error;
+mod hot_reload;
 mod index;
 mod parser;
+mod plugin_runtime;
+mod security;
 mod state;
 mod vault;
 mod watcher;
@@ -121,6 +125,28 @@ pub fn run() {
             // ========== 搜索与图谱命令 ==========
             commands::search,
             commands::get_graph,
+            // ========== 插件管理命令 ==========
+            commands::read_plugin_config,
+            commands::write_plugin_config,
+            commands::list_installed_plugins,
+            commands::load_plugin,
+            commands::unload_plugin,
+            commands::load_all_plugins,
+            commands::unload_all_plugins,
+            commands::init_plugin_system,
+            commands::reload_plugin,
+            commands::get_plugin_status,
+            commands::enable_plugin,
+            commands::disable_plugin,
+            commands::get_plugin_manifest,
+            commands::read_plugin_main,
+            commands::get_plugin_data,
+            commands::set_plugin_data,
+            commands::reload_all_plugins,
+            commands::list_dir,
+            commands::read_text_file,
+            commands::copy_plugin,
+            commands::uninstall_plugin,
         ])
         // 启动应用
         .run(tauri::generate_context!())

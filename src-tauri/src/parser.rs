@@ -108,13 +108,8 @@ pub fn extract_embeds(content: &str) -> Vec<LinkRef> {
 
 /// 提取笔记标题
 ///
-/// 优先从内容中查找一级标题（`# 标题`），如果找不到则使用文件名（不含扩展名）。
+/// 使用文件名（不含扩展名）作为标题。
 pub fn extract_title(content: &str, filename: &str) -> String {
-    for line in content.lines() {
-        if let Some(cap) = HEADING_REGEX.captures(line) {
-            return cap[1].trim().to_string();
-        }
-    }
     Path::new(filename)
         .file_stem()
         .and_then(|s| s.to_str())

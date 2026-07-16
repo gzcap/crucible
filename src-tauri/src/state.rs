@@ -9,14 +9,18 @@
 //! - 应用数据目录
 //! - Tauri 应用句柄
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use parking_lot::{Mutex, RwLock};
 use tauri::AppHandle;
 
 use crate::index::graph::LinkIndex;
 use crate::index::search::SearchIndex;
+use crate::plugin_runtime::PluginManager;
+use crate::security::PermissionManager;
 use crate::vault::{VaultInfo, VaultRegistry};
 
 use notify_debouncer_full::{Debouncer, FileIdMap};
@@ -39,10 +43,17 @@ pub struct AppState {
     pub search_index: SearchIndex,
     /// 文件监控器（互斥锁保护）
     pub watcher: Mutex<Option<Debouncer<RecommendedWatcher, FileIdMap>>>,
+    /// 待处理的删除事件（用于检测 Finder 重命名：先删后建）
+    /// key: 文件 stem，value: (旧路径, 时间戳)
+    pub pending_deletes: Mutex<HashMap<String, (String, Instant)>>,
     /// 应用数据目录路径（读写锁保护）
     pub app_data_dir: RwLock<PathBuf>,
     /// Tauri 应用句柄（原子引用计数）
     pub app_handle: Arc<AppHandle>,
+    /// 插件管理器（互斥锁保护）
+    pub plugin_manager: Mutex<Option<PluginManager>>,
+    /// 权限管理器（互斥锁保护）
+    pub permission_manager: Mutex<Option<PermissionManager>>,
 }
 
 impl AppState {
@@ -59,9 +70,20 @@ impl AppState {
             link_index: LinkIndex::new(),
             search_index: SearchIndex::new(),
             watcher: Mutex::new(None),
+            pending_deletes: Mutex::new(HashMap::new()),
             app_data_dir: RwLock::new(app_data_dir),
             app_handle,
+            plugin_manager: Mutex::new(None),
+            permission_manager: Mutex::new(None),
         }
+    }
+
+    pub fn init_plugin_manager(&self, vault_path: PathBuf) {
+        let mut pm = self.plugin_manager.lock();
+        *pm = Some(PluginManager::new(vault_path.clone()));
+
+        let mut perm_mgr = self.permission_manager.lock();
+        *perm_mgr = Some(PermissionManager::new(vault_path));
     }
 
     /// 获取 Vault 注册表文件路径

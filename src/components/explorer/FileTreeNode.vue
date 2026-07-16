@@ -33,6 +33,17 @@ const contextMenu = ref<{
   node: FileTreeNode | null
 }>({ visible: false, x: 0, y: 0, node: null })
 
+const editingNode = ref<{ node: FileTreeNode; newName: string } | null>(null)
+
+const editingName = computed({
+  get: () => editingNode.value?.newName || '',
+  set: (value: string) => {
+    if (editingNode.value) {
+      editingNode.value.newName = value
+    }
+  }
+})
+
 function isExpanded(path: string): boolean {
   return expandedDirs.value.has(path)
 }
@@ -89,9 +100,7 @@ async function deleteNode(node: FileTreeNode) {
       type: 'warning',
       confirmButtonClass: 'el-button--danger'
     })
-
-    closeContextMenu()
-
+    
     if (node.isDir) {
       await notesStore.removeFolder(node.path)
     } else {
@@ -107,6 +116,32 @@ async function createNoteInFolder(path: string) {
 
 async function createFolderInFolder(path: string) {
   await notesStore.createNewFolder()
+}
+
+function startRename(node: FileTreeNode) {
+  closeContextMenu()
+  editingNode.value = { node, newName: node.name }
+}
+
+async function finishRename() {
+  if (!editingNode.value) return
+  
+  const { node, newName } = editingNode.value
+  const trimmedName = newName.trim()
+  
+  if (trimmedName && trimmedName !== node.name) {
+    try {
+      await notesStore.renameItem(node.path, trimmedName)
+    } catch (e) {
+      console.error('[FileTreeNode] Failed to rename:', e)
+    }
+  }
+  
+  editingNode.value = null
+}
+
+function cancelRename() {
+  editingNode.value = null
 }
 </script>
 
@@ -125,7 +160,7 @@ async function createFolderInFolder(path: string) {
             <ArrowRight v-else />
           </ElIcon>
         </span>
-        <span v-else class="dir-spacer" />
+        <span v-else class="dir-spacer" ></span>
         
         <span class="node-icon">
           <ElIcon :size="14">
@@ -135,12 +170,21 @@ async function createFolderInFolder(path: string) {
           </ElIcon>
         </span>
         
-        <span class="node-name">
+        <span class="node-name" v-if="editingNode?.node.path !== node.path">
           {{ node.name }}
           <span v-if="node.isDir && getChildCount(node) > 0" class="node-count">
             {{ getChildCount(node) }}
           </span>
         </span>
+        <input 
+          v-else
+          v-model="editingName"
+          class="node-name-input"
+          @keydown.enter="finishRename"
+          @keydown.esc="cancelRename"
+          @blur="finishRename"
+          ref="(el) => el?.focus()"
+        />
         
         <span class="node-actions">
           <button 
@@ -189,6 +233,11 @@ async function createFolderInFolder(path: string) {
         icon: FolderAdd,
         action: () => createFolderInFolder(contextMenu.node!.path)
       },  
+      {
+        label: '重命名',
+        icon: Document,
+        action: () => startRename(contextMenu.node!)
+      },
       {
         label: contextMenu.node!.isDir ? '删除文件夹' : '删除文件',
         icon: Document,
@@ -322,6 +371,23 @@ async function createFolderInFolder(path: string) {
 .node-action-btn:hover {
   background: var(--roc-bg-secondary);
   color: var(--roc-text-primary);
+}
+
+.node-name-input {
+  flex: 1;
+  min-width: 80px;
+  max-width: 200px;
+  padding: 2px 6px;
+  border: 1px solid var(--roc-accent);
+  border-radius: 3px;
+  background: var(--roc-bg-primary);
+  color: var(--roc-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.node-name-input:focus {
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
 }
 
 .tree-node.dragging {

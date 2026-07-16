@@ -31,7 +31,7 @@
 
   /* 侧边栏的宽高 */
   --roc-sidebar-width: auto;
-  --roc-sidebar-height: 90%;
+  --roc-sidebar-height: auto;
   /* 边框圆角 */
   --roc-border-radius: 10px;
 
@@ -40,7 +40,7 @@
 
   /* 底部栏的宽高 */
   --roc-bottom-sidebar-width: 100vw;
-  --roc-bottom-sidebar-height: calc(100% - var(--roc-sidebar-height));
+  --roc-bottom-sidebar-height: 20px;
 
   --roc-activity-bar-width: 40px;
   --roc-right-sidebar-width: 300px;

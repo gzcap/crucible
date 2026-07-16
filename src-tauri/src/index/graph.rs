@@ -151,25 +151,45 @@ impl LinkIndex {
     /// 处理笔记重命名
     ///
     /// 执行以下操作：
-    /// 1. 更新所有引用该笔记的 wikilink（自动修复链接）
-    /// 2. 从索引中移除旧路径
-    /// 3. 插入新路径的笔记信息
-    /// 4. 重建反向链接
-    pub fn on_rename(&self, old_path: &str, new_path: &str, vault_path: &Path) -> Result<()> {
+    /// 1. 解析旧 stem 和新 stem
+    /// 2. 遍历 forward 找到所有引用旧 stem 的笔记
+    /// 3. 正则替换 `[[old…]]` → `[[new…]]`（保留 heading/alias）
+    /// 4. 写回文件并更新索引
+    /// 5. 从索引中移除旧路径，插入新路径
+    /// 6. 返回修改的文件列表供 emit modify 事件
+    pub fn on_rename(&self, old_path: &str, new_path: &str, vault_path: &Path) -> Result<Vec<String>> {
         let old_stem = extract_stem(old_path);
         let new_stem = extract_stem(new_path);
 
-        // 更新所有引用该笔记的 wikilink
-        for source_path in self.backrefs.get(old_path).map(|v| v.clone()).unwrap_or_default() {
-            let abs_path = vault_path.join(&source_path);
-            let content = fs::read_to_string(&abs_path)?;
-            let new_content = replace_wikilink(&content, &old_stem, &new_stem);
+        let mut modified_files = Vec::new();
 
-            if content != new_content {
-                fs::write(&abs_path, new_content)?;
+        // 遍历所有笔记的正向链接，找到引用旧 stem 的笔记
+        for entry in self.forward.iter() {
+            let source_path = entry.key().clone();
+            let links = entry.value();
+
+            // 检查该笔记是否引用了旧 stem
+            let has_ref = links.iter().any(|link| link.target == old_stem);
+
+            if has_ref {
+                let abs_path = vault_path.join(&source_path);
+                let content = fs::read_to_string(&abs_path)?;
+                let new_content = replace_wikilink(&content, &old_stem, &new_stem);
+
+                if content != new_content {
+                    fs::write(&abs_path, &new_content)?;
+
+                    let meta = fs::metadata(&abs_path)?;
+                    let mtime = meta.modified()?.elapsed()?.as_millis() as i64;
+                    let size = meta.len();
+                    let _ = self.upsert_note(&source_path, &new_content, mtime, size);
+
+                    modified_files.push(source_path);
+                }
             }
         }
 
+        // 从索引中移除旧路径
         self.remove_note(old_path)?;
 
         // 重新索引新路径的笔记
@@ -177,12 +197,13 @@ impl LinkIndex {
             let meta = fs::metadata(vault_path.join(new_path))?;
             let mtime = meta.modified()?.elapsed()?.as_millis() as i64;
             let size = meta.len();
-            self.upsert_note(new_path, &content, mtime, size)?;
+            let _ = self.upsert_note(new_path, &content, mtime, size);
         }
 
+        // 重建反向链接（确保所有修改后的引用源都已更新）
         self.rebuild_backrefs();
 
-        Ok(())
+        Ok(modified_files)
     }
 
     /// 解析 wikilink 目标路径

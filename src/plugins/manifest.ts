@@ -21,8 +21,10 @@ export interface PluginManifest {
   repo?: string
   /** 支持的最低应用版本 */
   minAppVersion?: string
-  /** 是否为付费插件 */
+  /** 是否为桌面端专用 */
   isDesktopOnly?: boolean
+  /** 插件权限列表 */
+  permissions?: string[]
 }
 
 /**

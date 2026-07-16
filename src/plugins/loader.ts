@@ -1,7 +1,7 @@
-import type { Plugin } from './types'
+import { Plugin } from './types'
 import type { PluginManifest } from './manifest'
 import { app } from './registry'
-import { readDir, readTextFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 
 export interface PluginPackage {
   manifest: PluginManifest
@@ -15,6 +15,52 @@ export interface PluginLoadOptions {
 
 export class PluginLoader {
   private loadedPlugins = new Set<string>()
+
+  async initPluginSystem(): Promise<void> {
+    try {
+      await invoke('init_plugin_system')
+      console.log('[PluginLoader] Plugin system initialized from backend')
+    } catch (error) {
+      console.error('[PluginLoader] Failed to initialize plugin system:', error)
+    }
+  }
+
+  async loadPluginsFromBackend(): Promise<Plugin[]> {
+    const plugins: Plugin[] = []
+
+    try {
+      await this.initPluginSystem()
+
+      const manifests = await invoke<PluginManifest[]>('list_installed_plugins')
+
+      for (const manifest of manifests) {
+        try {
+          const plugin = await this.loadPluginFromBackend(manifest)
+          if (plugin) {
+            plugins.push(plugin)
+          }
+        } catch (error) {
+          console.error(`[PluginLoader] Failed to load plugin ${manifest.id}:`, error)
+        }
+      }
+    } catch (error) {
+      console.error('[PluginLoader] Failed to load plugins from backend:', error)
+    }
+
+    return plugins
+  }
+
+  private async loadPluginFromBackend(manifest: PluginManifest): Promise<Plugin | null> {
+    try {
+      const mainContent = await invoke<string>('read_plugin_main', { pluginId: manifest.id })
+      
+      const module = await this.evalPluginModule(mainContent)
+      return this.instantiatePluginWithManifest(module, manifest)
+    } catch (error) {
+      console.error(`[PluginLoader] Failed to load plugin ${manifest.id} from backend:`, error)
+      return null
+    }
+  }
 
   async loadPluginFromURL(
     url: string,
@@ -39,8 +85,6 @@ export class PluginLoader {
       }
 
       const module = await response.json()
-
-      clearTimeout(timeoutId)
       return this.instantiatePlugin(module)
     } catch (error) {
       console.error('[PluginLoader] Failed to load plugin from URL:', error)
@@ -50,10 +94,26 @@ export class PluginLoader {
 
   async loadPluginFromFile(filePath: string): Promise<Plugin | null> {
     try {
-      const content = await readTextFile(filePath)
+      const content = await invoke<string>('read_text_file', { filePath })
       return this.instantiatePluginFromString(content)
     } catch (error) {
       console.error('[PluginLoader] Failed to load plugin from file:', error)
+      return null
+    }
+  }
+
+  async loadPluginFromDirectory(pluginDir: string): Promise<Plugin | null> {
+    try {
+      const manifestPath = `${pluginDir}/manifest.json`
+      const mainPath = `${pluginDir}/main.js`
+
+      const manifestContent = await invoke<string>('read_text_file', { filePath: manifestPath })
+      const manifest = JSON.parse(manifestContent) as PluginManifest
+
+      const mainContent = await invoke<string>('read_text_file', { filePath: mainPath })
+      return this.instantiatePluginFromSource(mainContent, manifest)
+    } catch (error) {
+      console.error('[PluginLoader] Failed to load plugin from directory:', error)
       return null
     }
   }
@@ -68,15 +128,43 @@ export class PluginLoader {
     }
   }
 
-  private async evalPluginModule(content: string): Promise<any> {
-    const blob = new Blob([content], { type: 'application/javascript' })
-    const url = URL.createObjectURL(blob)
-    
+  private async instantiatePluginFromSource(content: string, manifest: PluginManifest): Promise<Plugin | null> {
     try {
-      const module = await import(url)
-      return module
-    } finally {
-      URL.revokeObjectURL(url)
+      const module = await this.evalPluginModule(content)
+      return this.instantiatePluginWithManifest(module, manifest)
+    } catch (error) {
+      console.error('[PluginLoader] Failed to evaluate plugin module:', error)
+      return null
+    }
+  }
+
+  private async evalPluginModule(content: string): Promise<any> {
+    try {
+      let wrappedContent = content
+      
+      if (content.includes('export default')) {
+        wrappedContent = content.replace(
+          /export\s+default\s+(\w+)/g,
+          'return $1'
+        )
+        const fn = new Function('Plugin', 'app', wrappedContent)
+        return { default: fn(Plugin, app) }
+      }
+      
+      if (content.includes('module.exports')) {
+        const module = { exports: {} }
+        const fn = new Function('module', 'exports', 'Plugin', 'app', wrappedContent)
+        fn(module, module.exports, Plugin, app)
+        return module.exports
+      }
+      
+      const module = { exports: {} }
+      const fn = new Function('exports', 'require', 'module', '__filename', '__dirname', 'Plugin', 'app', content)
+      fn(module.exports, () => {}, module, '', '', Plugin, app)
+      return module.exports
+    } catch (error) {
+      console.error('[PluginLoader] Failed to eval plugin module:', error)
+      throw error
     }
   }
 
@@ -110,15 +198,62 @@ export class PluginLoader {
     }
   }
 
+  private instantiatePluginWithManifest(module: any, manifest: PluginManifest): Plugin | null {
+    try {
+      const pluginClass = module.default || module
+      if (typeof pluginClass !== 'function') {
+        console.error('[PluginLoader] Plugin module must export a class')
+        return null
+      }
+
+      if (!manifest.id) {
+        console.error('[PluginLoader] Plugin manifest must have an id')
+        return null
+      }
+
+      if (this.loadedPlugins.has(manifest.id)) {
+        console.warn(`[PluginLoader] Plugin "${manifest.id}" is already loaded`)
+        return null
+      }
+
+      (pluginClass as any).manifest = manifest
+
+      app.registerPlugin(pluginClass)
+      app.enablePlugin(manifest.id)
+
+      this.loadedPlugins.add(manifest.id)
+      return app.getPlugin(manifest.id)
+    } catch (error) {
+      console.error('[PluginLoader] Failed to instantiate plugin:', error)
+      return null
+    }
+  }
+
   async loadPluginsFromDirectory(directory: string): Promise<Plugin[]> {
     const plugins: Plugin[] = []
 
     try {
-      const files = await this.readDirectory(directory)
+      const entries = await invoke<any[]>('list_dir', { dir: directory })
 
-      for (const file of files) {
-        if (file.endsWith('.js')) {
-          const plugin = await this.loadPluginFromFile(`${directory}/${file}`)
+      for (const entry of entries) {
+        if (entry.isDirectory) {
+          const pluginDir = `${directory}/${entry.name}`
+          const manifestPath = `${pluginDir}/manifest.json`
+          const mainPath = `${pluginDir}/main.js`
+
+          try {
+            await invoke<string>('read_text_file', { filePath: manifestPath })
+            await invoke<string>('read_text_file', { filePath: mainPath })
+
+            const plugin = await this.loadPluginFromDirectory(pluginDir)
+            if (plugin) {
+              plugins.push(plugin)
+            }
+          } catch {
+            continue
+          }
+        } else if (entry.name.endsWith('.js')) {
+          const plugin = await this.loadPluginFromFile(`${directory}/${entry.name}`)
           if (plugin) {
             plugins.push(plugin)
           }
@@ -131,13 +266,68 @@ export class PluginLoader {
     return plugins
   }
 
-  private async readDirectory(directory: string): Promise<string[]> {
+  async enablePlugin(pluginId: string): Promise<void> {
     try {
-      const entries = await readDir(directory)
-      return entries
-        .filter((entry) => entry.isFile)
-        .map((entry) => entry.name)
-    } catch {
+      await invoke('enable_plugin', { pluginId })
+      
+      const mainContent = await invoke<string>('read_plugin_main', { pluginId })
+      const module = await this.evalPluginModule(mainContent)
+      
+      const pluginClass = module.default || module
+      if (typeof pluginClass === 'function') {
+        (pluginClass as any).manifest = { id: pluginId }
+        app.registerPlugin(pluginClass)
+        app.enablePlugin(pluginId)
+        
+        const pluginInstance = app.getPlugin(pluginId)
+        if (pluginInstance && typeof pluginInstance.onload === 'function') {
+          await pluginInstance.onload()
+        }
+        
+        this.loadedPlugins.add(pluginId)
+      }
+      
+      console.log(`[PluginLoader] Plugin "${pluginId}" enabled`)
+    } catch (error) {
+      console.error(`[PluginLoader] Failed to enable plugin ${pluginId}:`, error)
+    }
+  }
+
+  async disablePlugin(pluginId: string): Promise<void> {
+    try {
+      const pluginInstance = app.getPlugin(pluginId)
+      if (pluginInstance && typeof pluginInstance.onunload === 'function') {
+        pluginInstance.onunload()
+      }
+      
+      app.disablePlugin(pluginId)
+      this.loadedPlugins.delete(pluginId)
+      
+      await invoke('disable_plugin', { pluginId })
+      
+      console.log(`[PluginLoader] Plugin "${pluginId}" disabled`)
+    } catch (error) {
+      console.error(`[PluginLoader] Failed to disable plugin ${pluginId}:`, error)
+    }
+  }
+
+  async reloadPlugin(pluginId: string): Promise<Plugin | null> {
+    try {
+      await invoke('reload_plugin', { pluginId })
+      const manifest = await invoke<PluginManifest>('get_plugin_manifest', { pluginId })
+      return this.loadPluginFromBackend(manifest)
+    } catch (error) {
+      console.error(`[PluginLoader] Failed to reload plugin ${pluginId}:`, error)
+      return null
+    }
+  }
+
+  async reloadAllPlugins(): Promise<Plugin[]> {
+    try {
+      await invoke('reload_all_plugins')
+      return this.loadPluginsFromBackend()
+    } catch (error) {
+      console.error('[PluginLoader] Failed to reload all plugins:', error)
       return []
     }
   }
@@ -147,8 +337,45 @@ export class PluginLoader {
     this.loadedPlugins.delete(pluginId)
   }
 
+  unloadAllPlugins(): void {
+    for (const pluginId of this.loadedPlugins) {
+      app.disablePlugin(pluginId)
+    }
+    this.loadedPlugins.clear()
+    app.clearPluginResources()
+    console.log('[PluginLoader] Unloaded all plugins and cleared resources')
+  }
+
+  async reloadPluginsFromDirectory(directory: string): Promise<Plugin[]> {
+    this.unloadAllPlugins()
+    return this.loadPluginsFromDirectory(directory)
+  }
+
+  async reloadPluginsFromBackend(): Promise<Plugin[]> {
+    this.unloadAllPlugins()
+    return this.loadPluginsFromBackend()
+  }
+
   isLoaded(pluginId: string): boolean {
     return this.loadedPlugins.has(pluginId)
+  }
+
+  async getPluginData(pluginId: string): Promise<any> {
+    try {
+      const data = await invoke<string>('get_plugin_data', { pluginId })
+      return JSON.parse(data)
+    } catch (error) {
+      console.error(`[PluginLoader] Failed to get data for plugin ${pluginId}:`, error)
+      return null
+    }
+  }
+
+  async setPluginData(pluginId: string, data: any): Promise<void> {
+    try {
+      await invoke('set_plugin_data', { pluginId, data: JSON.stringify(data) })
+    } catch (error) {
+      console.error(`[PluginLoader] Failed to set data for plugin ${pluginId}:`, error)
+    }
   }
 }
 

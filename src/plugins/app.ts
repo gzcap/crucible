@@ -53,6 +53,8 @@ export interface Workspace {
   createModal(options: ModalOptions): HTMLElement
   /** 打开命令面板 */
   openCommandPalette(): void
+  /** 清空所有面板（切换 vault 时使用） */
+  clearPanels(): void
 }
 
 /**
@@ -213,6 +215,8 @@ export interface Commands {
   executeCommand(commandId: string): void
   /** 获取所有已注册命令 */
   getCommands(): Command[]
+  /** 清空所有命令（切换 vault 时使用） */
+  clearCommands(): void
 }
 
 /**

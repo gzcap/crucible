@@ -1,161 +1,175 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { ElIcon, ElSwitch, ElButton, ElTooltip, ElCard, ElInput, ElLoading } from 'element-plus'
-import { 
-  Setting, 
-  InfoFilled, 
-  Edit, 
-  FolderOpened, 
-  Document, 
-  Link, 
-  MoreFilled, 
-  Key, 
-  Folder, 
-  Refresh, 
+import { ref, computed, onMounted } from "vue";
+import {
+  ElIcon,
+  ElSwitch,
+  ElButton,
+  ElTooltip,
+  ElCard,
+  ElInput,
+  ElLoading,
+} from "element-plus";
+import {
+  Setting,
+  InfoFilled,
+  Edit,
+  FolderOpened,
+  Document,
+  Link,
+  MoreFilled,
+  Key,
+  Folder,
+  Refresh,
   Search,
   Share,
   Close,
   Check,
   Delete,
-  Aim
-} from '@element-plus/icons-vue'
-import { useVaultStore } from '../../stores/vault'
-import { rocApp, pluginLoader } from '../../plugins'
-import type { PluginManifest } from '../../plugins/manifest'
-import { openPath } from '@tauri-apps/plugin-opener'
+  Aim,
+} from "@element-plus/icons-vue";
+import { useVaultStore } from "../../stores/vault";
+import { rocApp, pluginLoader } from "../../plugins";
+import type { PluginManifest } from "../../plugins/manifest";
+import { openPath } from "@tauri-apps/plugin-opener";
+import PluginManager from "../plugins/PluginManager.vue";
 
 const props = defineProps<{
-  visible: boolean
-}>()
+  visible: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'close'): void
-}>()
+  (e: "close"): void;
+}>();
 
 interface PluginItem {
-  id: string
-  name: string
-  version: string
-  description: string | undefined
-  enabled: boolean
-  builtin: boolean
-  author?: string
-  manifest: PluginManifest
+  id: string;
+  name: string;
+  version: string;
+  description: string | undefined;
+  enabled: boolean;
+  builtin: boolean;
+  author?: string;
+  manifest: PluginManifest;
 }
 
-const vaultStore = useVaultStore()
-const activeTab = ref('plugins')
-const searchQuery = ref('')
-const plugins = ref<PluginItem[]>([])
-const loading = ref(false)
-const error = ref('')
-const safeMode = ref(false)
-const autoUpdate = ref(true)
+const vaultStore = useVaultStore();
+const activeTab = ref("plugins");
+const searchQuery = ref("");
+const plugins = ref<PluginItem[]>([]);
+const loading = ref(false);
+const error = ref("");
+const safeMode = ref(false);
+const autoUpdate = ref(true);
 
 interface NavItem {
-  id: string
-  icon: any
-  label: string
+  id: string;
+  icon: any;
+  label: string;
 }
 
 const navItems: NavItem[] = [
-  { id: 'about', icon: InfoFilled, label: '关于' },
-  { id: 'editor', icon: Edit, label: '编辑器' },
-  { id: 'files', icon: FolderOpened, label: '文件与链接' },
-  { id: 'appearance', icon: Document, label: '外观' },
-  { id: 'links', icon: Link, label: '链接' },
-  { id: 'hotkeys', icon: MoreFilled, label: '快捷键' },
-  { id: 'keys', icon: Key, label: '钥匙串' },
-  { id: 'core', icon: Folder, label: '核心插件' },
-  { id: 'plugins', icon: Setting, label: '第三方插件' },
-]
+  { id: "about", icon: InfoFilled, label: "关于" },
+  { id: "editor", icon: Edit, label: "编辑器" },
+  { id: "files", icon: FolderOpened, label: "文件与链接" },
+  { id: "appearance", icon: Document, label: "外观" },
+  { id: "links", icon: Link, label: "链接" },
+  { id: "hotkeys", icon: MoreFilled, label: "快捷键" },
+  { id: "keys", icon: Key, label: "钥匙串" },
+  { id: "core", icon: Folder, label: "核心插件" },
+  { id: "plugins", icon: Setting, label: "第三方插件" },
+];
 
 const pluginDirPath = computed(() => {
-  if (!vaultStore.currentVault) return null
-  return `${vaultStore.currentVault.path}/.roc/plugins`
-})
+  if (!vaultStore.currentVault) return null;
+  return `${vaultStore.currentVault.path}/.roc/plugins`;
+});
 
 const filteredPlugins = computed(() => {
-  if (!searchQuery.value) return plugins.value
-  const query = searchQuery.value.toLowerCase()
-  return plugins.value.filter(p => 
-    p.name.toLowerCase().includes(query) ||
-    p.description?.toLowerCase().includes(query) ||
-    p.author?.toLowerCase().includes(query)
-  )
-})
+  if (!searchQuery.value) return plugins.value;
+  const query = searchQuery.value.toLowerCase();
+  return plugins.value.filter(
+    (p) =>
+      p.name.toLowerCase().includes(query) ||
+      p.description?.toLowerCase().includes(query) ||
+      p.author?.toLowerCase().includes(query),
+  );
+});
 
-const corePlugins = computed(() => filteredPlugins.value.filter(p => p.builtin))
-const thirdPartyPlugins = computed(() => filteredPlugins.value.filter(p => !p.builtin))
+const corePlugins = computed(() =>
+  filteredPlugins.value.filter((p) => p.builtin),
+);
+const thirdPartyPlugins = computed(() =>
+  filteredPlugins.value.filter((p) => !p.builtin),
+);
 
 async function loadPlugins() {
-  loading.value = true
-  error.value = ''
-  
+  loading.value = true;
+  error.value = "";
+
   try {
-    const pluginEntries = rocApp.getPlugins()
-    plugins.value = pluginEntries.map(entry => ({
+    const pluginEntries = rocApp.getPlugins();
+    plugins.value = pluginEntries.map((entry) => ({
       id: entry.manifest.id,
       name: entry.manifest.name,
       version: entry.manifest.version,
       description: entry.manifest.description,
       enabled: entry.enabled,
-      builtin: entry.manifest.id.startsWith('roc-'),
+      builtin: entry.manifest.id.startsWith("roc-"),
       author: (entry.manifest as any).author,
       manifest: entry.manifest,
-    }))
+    }));
   } catch (e) {
-    error.value = '加载插件列表失败'
-    console.error('[SettingsModal] Failed to load plugins:', e)
+    error.value = "加载插件列表失败";
+    console.error("[SettingsModal] Failed to load plugins:", e);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function togglePlugin(pluginId: string, enabled: unknown) {
   if (enabled) {
-    rocApp.enablePlugin(pluginId)
+    rocApp.enablePlugin(pluginId);
   } else {
-    rocApp.disablePlugin(pluginId)
+    rocApp.disablePlugin(pluginId);
   }
-  await loadPlugins()
+  await loadPlugins();
 }
 
 async function loadPluginsFromVault() {
   if (!pluginDirPath.value) {
-    error.value = '请先打开一个仓库'
-    return
+    error.value = "请先打开一个仓库";
+    return;
   }
 
-  loading.value = true
-  error.value = ''
+  loading.value = true;
+  error.value = "";
 
   try {
-    await pluginLoader.loadPluginsFromDirectory(pluginDirPath.value)
-    await loadPlugins()
+    await pluginLoader.loadPluginsFromDirectory(pluginDirPath.value);
+    await loadPlugins();
   } catch (e) {
-    error.value = '从仓库加载插件失败'
-    console.error('[SettingsModal] Failed to load plugins from vault:', e)
+    error.value = "从仓库加载插件失败";
+    console.error("[SettingsModal] Failed to load plugins from vault:", e);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function openPluginDirectory() {
   if (!pluginDirPath.value) {
-    error.value = '请先打开一个仓库'
-    return
+    error.value = "请先打开一个仓库";
+    return;
   }
-  await openPath(pluginDirPath.value)
+  await openPath(pluginDirPath.value);
 }
 
 function closeModal() {
-  emit('close')
+  emit("close");
 }
 
 onMounted(() => {
-  loadPlugins()
-})
+  loadPlugins();
+});
 </script>
 
 <template>
@@ -169,7 +183,7 @@ onMounted(() => {
               <Close :size="16" />
             </button>
           </div>
-          
+
           <div class="settings-body">
             <aside class="settings-sidebar">
               <nav class="settings-nav">
@@ -186,7 +200,7 @@ onMounted(() => {
                   <span class="nav-label">{{ item.label }}</span>
                 </button>
               </nav>
-              
+
               <div v-if="thirdPartyPlugins.length > 0" class="sidebar-footer">
                 <span class="sidebar-footer-title">第三方插件</span>
                 <button
@@ -200,13 +214,13 @@ onMounted(() => {
                 </button>
               </div>
             </aside>
-            
+
             <main class="settings-content">
               <div v-if="activeTab === 'plugins'" class="plugins-page">
                 <div class="page-section">
                   <div class="section-header">
                     <h3 class="section-title">安全模式</h3>
-                    <ElSwitch 
+                    <ElSwitch
                       v-model="safeMode"
                       active-text="开启"
                       inactive-text="关闭"
@@ -216,7 +230,7 @@ onMounted(() => {
                     安全模式已关闭。开启以限制第三方插件运行。
                   </p>
                 </div>
-                
+
                 <div class="page-section">
                   <div class="section-header">
                     <h3 class="section-title">社区插件市场</h3>
@@ -226,7 +240,7 @@ onMounted(() => {
                     浏览、安装社区成员制作的第三方插件。
                   </p>
                 </div>
-                
+
                 <div class="page-section">
                   <div class="section-header">
                     <h3 class="section-title">插件安装情况</h3>
@@ -236,102 +250,29 @@ onMounted(() => {
                     你目前已经安装了 {{ plugins.length }} 个插件。
                   </p>
                 </div>
-                
+
                 <div class="page-section">
                   <div class="section-header">
                     <h3 class="section-title">自动检查插件更新</h3>
-                    <ElSwitch 
+                    <ElSwitch
                       v-model="autoUpdate"
                       active-text="开启"
                       inactive-text="关闭"
                     />
                   </div>
-                  <p class="section-description">
-                    定期检查第三方插件的更新。
-                  </p>
+                  <p class="section-description">定期检查第三方插件的更新。</p>
                 </div>
-                
+
                 <div class="installed-plugins">
-                  <div class="installed-header">
-                    <h3 class="installed-title">已安装插件</h3>
-                    <div class="installed-actions">
-                      <el-tooltip content="刷新插件列表" placement="bottom">
-                        <button class="action-btn" @click="loadPlugins" :disabled="loading">
-                          <Refresh :size="14" />
-                        </button>
-                      </el-tooltip>
-                      <el-tooltip content="打开插件目录" placement="bottom">
-                        <button class="action-btn" @click="openPluginDirectory" :disabled="!pluginDirPath">
-                          <Share :size="14" />
-                        </button>
-                      </el-tooltip>
-                    </div>
-                  </div>
-                  
-                  <ElInput
-                    v-model="searchQuery"
-                    placeholder="搜索已安装的插件..."
-                    size="small"
-                    class="plugin-search"
-                    prefix-icon="Search"
-                  />
-                  
-                  <div v-if="error" class="plugin-error">{{ error }}</div>
-                  
-                  <div v-if="loading" class="plugin-loading">
-                    <ElLoading :text="'加载中...'" />
-                  </div>
-                  
-                  <div v-else-if="plugins.length === 0" class="plugin-empty">
-                    <Aim :size="32" class="empty-icon" />
-                    <p>暂无插件</p>
-                    <p class="empty-hint">将插件文件放入 {{ pluginDirPath || '.roc/plugins' }} 目录后点击刷新</p>
-                  </div>
-                  
-                  <div v-else class="plugin-list">
-                    <div v-for="plugin in filteredPlugins" :key="plugin.id" class="plugin-card">
-                      <div class="plugin-card-header">
-                        <div class="plugin-info">
-                          <span class="plugin-name">{{ plugin.name }}</span>
-                          <span v-if="plugin.builtin" class="plugin-badge">内置</span>
-                        </div>
-                        <div class="plugin-card-actions">
-                          <el-tooltip content="设置" placement="bottom">
-                            <button class="card-action-btn" :disabled="!plugin.enabled">
-                              <Setting :size="14" />
-                            </button>
-                          </el-tooltip>
-                          <el-tooltip content="复制ID" placement="bottom">
-                            <button class="card-action-btn">
-                              <Check :size="14" />
-                            </button>
-                          </el-tooltip>
-                          <el-tooltip content="删除" placement="bottom">
-                            <button class="card-action-btn delete-btn" :disabled="plugin.builtin">
-                              <Delete :size="14" />
-                            </button>
-                          </el-tooltip>
-                          <ElSwitch 
-                            v-model="plugin.enabled"
-                            @change="(val) => togglePlugin(plugin.id, val)"
-                            :disabled="plugin.builtin"
-                            class="plugin-switch"
-                          />
-                        </div>
-                      </div>
-                      <div class="plugin-card-body">
-                        <span class="plugin-version">版本: {{ plugin.version }}</span>
-                        <span v-if="plugin.author" class="plugin-author">作者: {{ plugin.author }}</span>
-                        <p class="plugin-description">{{ plugin.description }}</p>
-                      </div>
-                    </div>
-                  </div>
+                  <PluginManager />
                 </div>
               </div>
-              
+
               <div v-else class="placeholder-page">
                 <Aim :size="48" class="placeholder-icon" />
-                <h3 class="placeholder-title">{{ navItems.find(n => n.id === activeTab)?.label }}</h3>
+                <h3 class="placeholder-title">
+                  {{ navItems.find((n) => n.id === activeTab)?.label }}
+                </h3>
                 <p class="placeholder-description">此功能正在开发中...</p>
               </div>
             </main>

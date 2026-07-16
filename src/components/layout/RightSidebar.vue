@@ -11,6 +11,7 @@ import {
 } from "@element-plus/icons-vue";
 import { useLayoutStore } from "../../stores/layout";
 import { rocApp } from "../../plugins";
+import { listen } from "@tauri-apps/api/event";
 import FilesPanel from "../panels/FilesPanel.vue";
 import SearchPanel from "../panels/SearchPanel.vue";
 import BacklinksPanel from "../panels/BacklinksPanel.vue";
@@ -76,10 +77,26 @@ function getActivePluginPanel() {
   return pluginPanels.value.find(p => p.id === activeTab.value);
 }
 
-onMounted(() => {
-  rocApp.events.on('workspace:sidebar-panel-registered', handlePanelRegistered);
+function loadPluginPanels() {
+  pluginPanels.value = [];
   const panels = rocApp.workspace.getSidebarPanels();
   panels.forEach(handlePanelRegistered);
+}
+
+onMounted(() => {
+  rocApp.events.on('workspace:sidebar-panel-registered', handlePanelRegistered);
+  loadPluginPanels();
+
+  listen('roc://vault-opened', () => {
+    loadPluginPanels();
+  });
+
+  listen('roc://vault-closed', () => {
+    pluginPanels.value = [];
+    if (pluginPanels.value.find(p => p.id === activeTab.value)) {
+      activeTab.value = 'backlinks';
+    }
+  });
 });
 
 onUnmounted(() => {

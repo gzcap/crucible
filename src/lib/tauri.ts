@@ -149,3 +149,25 @@ export async function createFolder(): Promise<{ path: string; name: string }> {
 export async function deleteFolder(path: string): Promise<void> {
   return invoke('delete_folder', { path })
 }
+
+export async function readPluginConfig(pluginId: string): Promise<string> {
+  return invoke('read_plugin_config', { pluginId })
+}
+
+export async function writePluginConfig(pluginId: string, data: string): Promise<void> {
+  return invoke('write_plugin_config', { pluginId, data })
+}
+
+export async function listInstalledPlugins(): Promise<{
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  authorUrl?: string
+  repo?: string
+  minAppVersion?: string
+  isDesktopOnly?: boolean
+}[]> {
+  return invoke('list_installed_plugins')
+}
