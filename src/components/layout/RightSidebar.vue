@@ -91,9 +91,19 @@ function getActivePluginPanel() {
 }
 
 function loadPluginPanels() {
+  const enabledPluginIds = new Set(
+    Array.from((rocApp as any).plugins.values())
+      .filter((p: any) => p.enabled)
+      .map((p: any) => p.manifest.id)
+  );
+  
+  const allPanels = rocApp.workspace.getSidebarPanels();
+  const enabledPanels = allPanels.filter((panel: any) => {
+    return enabledPluginIds.has(panel.pluginId);
+  });
+  
   pluginPanels.value = [];
-  const panels = rocApp.getEnabledPluginPanels();
-  panels.forEach(handlePanelRegistered);
+  enabledPanels.forEach(handlePanelRegistered);
 }
 
 function handlePanelsUpdated() {

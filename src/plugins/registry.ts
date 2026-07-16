@@ -586,7 +586,6 @@ export class App implements AppInterface {
         entry.enabled = false
         entry.instance = undefined
 
-        this.workspace.removePanelsByPlugin(pluginId)
         this.events.emit('workspace:sidebar-panels-updated')
 
         console.log(`[App] Disabled plugin: ${entry.manifest.name}`)
